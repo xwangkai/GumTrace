@@ -6,6 +6,33 @@
 #include "GumTrace.h"
 #include "Utils.h"
 
+// ── 新增：解析 Mach-O 获取模块真实结束地址 ─────────────────────────────
+#if !PLATFORM_ANDROID
+
+struct SectionEndAccum {
+    uintptr_t end;
+};
+
+static gboolean section_end_cb(const GumSectionDetails *details, gpointer user_data) {
+    auto *accum = (SectionEndAccum *)user_data;
+    uintptr_t sec_end = (uintptr_t)details->address + (uintptr_t)details->size;
+    if (sec_end > accum->end) {
+        accum->end = sec_end;
+    }
+    return TRUE;
+}
+
+// 返回模块真实结束地址（跨越所有 segment）
+static uintptr_t get_real_module_end(GumModule *gum_module, const GumMemoryRange *range) {
+    SectionEndAccum accum;
+    accum.end = (uintptr_t)range->base_address + (uintptr_t)range->size;
+    gum_module_enumerate_sections(gum_module, section_end_cb, &accum);
+    return accum.end;
+}
+
+#endif
+// ── 新增结束 ────────────────────────────────────────────────────────────
+
 gboolean module_symbols_cb(const GumSymbolDetails * details, gpointer user_data) {
     auto *instance = GumTrace::get_instance();
     if (details && details->name && details->address && details->section != nullptr &&
@@ -81,7 +108,14 @@ gboolean module_enumerate (GumModule * module, gpointer user_data) {
 #else
 
     if (instance->modules.count(module_name) == 0) {
-        gum_stalker_exclude(instance->_stalker, gum_module_get_range(module));
+        //gum_stalker_exclude(instance->_stalker, gum_module_get_range(module));
+        // ↓ 修复后：构造覆盖全部 segment 的正确 range
+        auto *range = gum_module_get_range(module);
+        uintptr_t real_end = get_real_module_end(module, range);
+        GumMemoryRange real_range;
+        real_range.base_address = range->base_address;
+        real_range.size = real_end - (uintptr_t)range->base_address;
+        gum_stalker_exclude(instance->_stalker, &real_range);
     }
     return true;
 
@@ -120,7 +154,13 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
         gum_module_enumerate_dependencies(gum_module, module_dependency_cb, nullptr);
         auto *gum_module_range = gum_module_get_range(gum_module);
         module_map["base"] = gum_module_range->base_address;
-        module_map["size"] = gum_module_range->size;
+        //module_map["size"] = gum_module_range->size;
+        #if PLATFORM_ANDROID
+            module_map["size"] = gum_module_range->size;
+        #else
+            uintptr_t real_end = get_real_module_end(gum_module, gum_module_range);
+            module_map["size"] = real_end - (uintptr_t)gum_module_range->base_address;
+        #endif
     }
 
     gum_process_enumerate_modules(module_enumerate, nullptr);
