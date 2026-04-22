@@ -52,6 +52,8 @@ public:
     int trace_thread_id;
     int trace_flush = 0;
     std::unordered_map<size_t, std::string> func_maps;
+    std::unordered_map<size_t, std::string> resolved_cache;  // 运行时解析缓存 add
+
     FUNC_CONTEXT last_func_context = {};
 
     GumStalker* _stalker;
