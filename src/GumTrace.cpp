@@ -283,13 +283,47 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         }
 
         if (jump_addr > 0) {
-            if (self->func_maps.count(jump_addr) > 0) {
+            // 1. 优先查静态符号表
+            const std::string *sym_name = nullptr;
+            auto it = self->func_maps.find(jump_addr);
+            if (it != self->func_maps.end()) {
+                sym_name = &it->second;
+            }
+
+            // 2. 静态表没有 → 查运行时缓存（避免重复调用 gum_symbol_name_from_address）
+            if (sym_name == nullptr) {
+                auto cache_it = self->resolved_cache.find(jump_addr);
+                if (cache_it != self->resolved_cache.end()) {
+                    sym_name = &cache_it->second;
+                } else {
+                    // 3. 缓存也没有 → 运行时动态解析
+                    //    这里能正确处理懒加载已解析后的真实地址
+                    gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
+                    if (name != nullptr) {
+                        self->resolved_cache[(size_t)jump_addr] = name;
+                        sym_name = &self->resolved_cache[(size_t)jump_addr];
+                        g_free(name);
+                    } /*else {
+                        // 4. 解析失败：回退到模块名+偏移
+                        auto *rng = self->find_range_by_address((uintptr_t)jump_addr);
+                        if (rng != nullptr) {
+                            char fallback[128];
+                            snprintf(fallback, sizeof(fallback), "<%s+0x%llx>",
+                                     rng->file_path.c_str(),
+                                     (unsigned long long)((uintptr_t)jump_addr - rng->base));
+                            self->resolved_cache[(size_t)jump_addr] = fallback;
+                            sym_name = &self->resolved_cache[(size_t)jump_addr];
+                        }
+                    }*/
+                }
+            }
+
+            if (sym_name != nullptr && !sym_name->empty()) {
                 self->last_func_context.info_n = 0;
                 self->last_func_context.address = jump_addr;
-                self->last_func_context.name = self->func_maps[jump_addr].c_str();
+                self->last_func_context.name = sym_name->c_str();
                 memcpy(&self->last_func_context.cpu_context, cpu_context, sizeof(GumCpuContext));
                 self->last_func_context.call = true;
-
                 FuncPrinter::before(&self->last_func_context);
             }
 #            if PLATFORM_ANDROID
