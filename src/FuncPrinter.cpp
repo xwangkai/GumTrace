@@ -61,9 +61,11 @@ const std::unordered_map<std::string, BeforeFuncConfig> func_configs = {
     // 字符串操作
     {"strstr", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
     {"strlen", {PARAMS_NUMBER_ONE, {STR_INDEX_ZERO}, {}}},
+    {"_platform_strlen", {PARAMS_NUMBER_ONE, {STR_INDEX_ZERO}, {}}},
     {"__strlen_chk", {PARAMS_NUMBER_ONE, {STR_INDEX_ZERO}, {}}},
     {"__strlen_aarch64", {PARAMS_NUMBER_ONE, {STR_INDEX_ZERO}, {}}},
     {"strcmp", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
+    {"_platform_strcmp", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
     {"strncmp", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
     {"__strncmp_aarch64", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
     {"strcpy", {PARAMS_NUMBER_TWO, {STR_INDEX_ZERO, STR_INDEX_ONE}, {}}},
@@ -94,6 +96,7 @@ const std::unordered_map<std::string, BeforeFuncConfig> func_configs = {
     {"__memcpy_aarch64_simd", {PARAMS_NUMBER_THREE, {}, {{HEX_INDEX_ONE, HEX_INDEX_TWO}}}},
     {"memmove", {PARAMS_NUMBER_THREE, {}, {{HEX_INDEX_ONE, HEX_INDEX_TWO}}}},
     {"__memmove_chk", {PARAMS_NUMBER_THREE, {}, {{HEX_INDEX_ONE, HEX_INDEX_TWO}}}},
+    {"_platform_memmove", {PARAMS_NUMBER_THREE, {}, {{HEX_INDEX_ONE, HEX_INDEX_TWO}}}},
     {"memset", {PARAMS_NUMBER_THREE, {}, {}}},
     {"__memset_chk", {PARAMS_NUMBER_THREE, {}, {}}},
     {"__memset_aarch64", {PARAMS_NUMBER_THREE, {}, {}}},
@@ -254,7 +257,7 @@ void FuncPrinter::hexdump(int& buff_n, char *buff, uint64_t address, size_t coun
             if (offset + i < count) {
                 char byte = bytePtr[offset + i];
 
-                Utils::auto_snprintf(buff_n, buff, "%02x ", byte);
+                Utils::auto_snprintf(buff_n, buff, "%02x ", (unsigned char)byte);
                 ascii[ascii_n++] = std::isprint(byte) ? byte : '.';
             } else {
                 buff[buff_n++] = ' ';
