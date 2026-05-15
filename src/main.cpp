@@ -127,6 +127,25 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
     gum_init();
 
+    /*
+        在 iOS 越狱环境下，告诉 Frida-gum 内核允许执行未签名的动态生成代码，从而让 Stalker 的 JIT 插桩机制能够正常运行
+        GUM_CODE_SIGNING_REQUIRED 所有写入内存的代码页都必须有合法签名，内核会拒绝执行未签名页
+        GUM_CODE_SIGNING_OPTIONAL 允许执行未签名的代码页（即放开限制）
+    */
+    //1. 查询当前策略并打印
+    auto code_signing_policy = gum_process_get_code_signing_policy();
+    LOGE("Gum code signing policy before init: %s",
+         gum_code_signing_policy_to_string(code_signing_policy));
+    
+    // 2. 仅在 iOS 上，如果策略是 REQUIRED，就强制改成 OPTIONAL
+#if PLATFORM_IOS
+    if (code_signing_policy != GUM_CODE_SIGNING_OPTIONAL) {
+        gum_process_set_code_signing_policy(GUM_CODE_SIGNING_OPTIONAL);
+        LOGE("Gum code signing policy forced to: %s",
+             gum_code_signing_policy_to_string(gum_process_get_code_signing_policy()));
+    }
+#endif
+
     GumTrace *instance = GumTrace::get_instance();
     memcpy(&instance->options, options, sizeof(GUM_OPTIONS));
 
