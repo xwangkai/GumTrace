@@ -345,14 +345,14 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                         Utils::append_string(buff, buff_n, " prot=0x");
                         Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);*/
                         Utils::append_char(buff, buff_n, '\n');
-                        self->trace_file.flush();
+                        //self->trace_file.flush();
                         
-                        gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
+                        /*gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
                         if (name != nullptr) {
                             self->resolved_cache[(size_t)jump_addr] = name;
                             sym_name = &self->resolved_cache[(size_t)jump_addr];
                             g_free(name);
-                        }
+                        }*/
                     }
                 }
             }
