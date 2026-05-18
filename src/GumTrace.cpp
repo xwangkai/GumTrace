@@ -6,6 +6,35 @@
 #include "Utils.h"
 #include "FuncPrinter.h"
 
+static bool should_resolve_call_target(uint32_t insn_id, uintptr_t jump_addr) {
+    if (jump_addr == 0) {
+        return false;
+    }
+
+    // Only treat call-like branches as function calls. Plain B/BR are often
+    // used for local control-flow or obfuscation dispatchers on ARM64.
+    if (insn_id != ARM64_INS_BL && insn_id != ARM64_INS_BLR) {
+        return false;
+    }
+
+    GumPageProtection protection;
+    if (!gum_memory_query_protection((gconstpointer) jump_addr, &protection)) {
+        return false;
+    }
+
+    if ((protection & GUM_PAGE_EXECUTE) == 0) {
+        return false;
+    }
+
+    GumModule *module = gum_process_find_module_by_address(jump_addr);
+    if (module == nullptr) {
+        return false;
+    }
+    g_object_unref(module);
+
+    return true;
+}
+
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
     return &instance;
@@ -274,15 +303,16 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         } else if (callback_ctx->instruction.id == ARM64_INS_BLR &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_REG) {
             Utils::get_register_value(callback_ctx->instruction_detail.arm64.operands[0].reg, cpu_context, jump_addr);
-        } else if (callback_ctx->instruction.id == ARM64_INS_BR &&
+        } /*else if (callback_ctx->instruction.id == ARM64_INS_BR &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_REG) {
             Utils::get_register_value(callback_ctx->instruction_detail.arm64.operands[0].reg, cpu_context, jump_addr);
         } else if (callback_ctx->instruction.id == ARM64_INS_B &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_IMM) {
             jump_addr = callback_ctx->instruction_detail.arm64.operands[0].imm;
-        }
+        }*/
 
-        if (jump_addr > 0) {
+        //if (jump_addr > 0) {
+        if (should_resolve_call_target(callback_ctx->instruction.id, jump_addr)) {
             // 1. 优先查静态符号表
             const std::string *sym_name = nullptr;
             auto it = self->func_maps.find(jump_addr);
