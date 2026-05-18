@@ -321,7 +321,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
             }
 
             // 2. 静态表没有 → 查运行时缓存（避免重复调用 gum_symbol_name_from_address）
-            /*const std::string *module_name_ptr = self->in_range_module(jump_addr);
+            const std::string *module_name_ptr = self->in_range_module(jump_addr);
             if (module_name_ptr == nullptr) {//排除本模块内的地址，不排除的话trace大小会很大
                 if (sym_name == nullptr) {
                     auto cache_it = self->resolved_cache.find(jump_addr);
@@ -330,6 +330,16 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                     } else {
                         // 3. 缓存也没有 → 运行时动态解析
                         //    这里能正确处理懒加载已解析后的真实地址
+                        Utils::append_string(buff, buff_n, "[unknown_jump] insn=");
+                        Utils::append_string(buff, buff_n, callback_ctx->instruction.mnemonic);
+                        Utils::append_string(buff, buff_n, " addr=0x");
+                        Utils::append_uint64_hex(buff, buff_n, (uintptr_t) jump_addr);
+                        Utils::append_string(buff, buff_n, " tracked=");
+                        Utils::append_string(buff, buff_n, tracked_module_name != nullptr ? tracked_module_name->c_str() : "<null>");
+                        Utils::append_string(buff, buff_n, " prot=0x");
+                        Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);
+                        Utils::append_char(buff, buff_n, '\n');
+                        
                         gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
                         if (name != nullptr) {
                             self->resolved_cache[(size_t)jump_addr] = name;
@@ -338,7 +348,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                         }
                     }
                 }
-            }*/
+            }
 
             if (sym_name != nullptr && !sym_name->empty()) {
                 self->last_func_context.info_n = 0;
