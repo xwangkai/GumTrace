@@ -6,35 +6,6 @@
 #include "Utils.h"
 #include "FuncPrinter.h"
 
-static bool should_resolve_call_target(uint32_t insn_id, uintptr_t jump_addr) {
-    if (jump_addr == 0) {
-        return false;
-    }
-
-    // Only treat call-like branches as function calls. Plain B/BR are often
-    // used for local control-flow or obfuscation dispatchers on ARM64.
-    if (insn_id != ARM64_INS_BL && insn_id != ARM64_INS_BLR) {
-        return false;
-    }
-
-    GumPageProtection protection;
-    if (!gum_memory_query_protection((gconstpointer) jump_addr, &protection)) {
-        return false;
-    }
-
-    if ((protection & GUM_PAGE_EXECUTE) == 0) {
-        return false;
-    }
-
-    GumModule *module = gum_process_find_module_by_address(jump_addr);
-    if (module == nullptr) {
-        return false;
-    }
-    g_object_unref(module);
-
-    return true;
-}
-
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
     return &instance;
@@ -312,57 +283,15 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         }
 
         if (jump_addr > 0) {
-        //if (should_resolve_call_target(callback_ctx->instruction.id, jump_addr)) {
-            // 1. 优先查静态符号表
             const std::string *sym_name = nullptr;
-            auto it = self->func_maps.find(jump_addr);
-            if (it != self->func_maps.end()) {
-                sym_name = &it->second;
-            }
-
-            // 2. 静态表没有 → 查运行时缓存（避免重复调用 gum_symbol_name_from_address）
-            const std::string *module_name_ptr = self->in_range_module(jump_addr);
-            if (module_name_ptr == nullptr) {//排除本模块内的地址，不排除的话trace大小会很大
-                if (sym_name == nullptr) {
-                    auto cache_it = self->resolved_cache.find(jump_addr);
-                    if (cache_it != self->resolved_cache.end()) {
-                        sym_name = &cache_it->second;
-                    } else {
-                        // 3. 缓存也没有 → 运行时动态解析
-                        //    这里能正确处理懒加载已解析后的真实地址
-                        /*GumPageProtection protection = GUM_PAGE_NO_ACCESS;
-                        gboolean has_protection = gum_memory_query_protection((gconstpointer) (uintptr_t) jump_addr, &protection);
-                        const std::string *tracked_module_name = self->in_range_module(jump_addr);
-                        GumModule *target_module = gum_process_find_module_by_address((GumAddress) jump_addr);
-                        const gchar *target_module_name = gum_module_get_name(target_module);
-                        const gchar *target_module_path = gum_module_get_path(target_module);*/
-                        Utils::append_string(buff, buff_n, "[unknown_jump] insn=");
-                        Utils::append_string(buff, buff_n, callback_ctx->instruction.mnemonic);
-                        Utils::append_string(buff, buff_n, " addr=0x");
-                        Utils::append_uint64_hex(buff, buff_n, (uintptr_t) jump_addr);
-                        /*Utils::append_string(buff, buff_n, " tracked=");
-                        Utils::append_string(buff, buff_n, tracked_module_name != nullptr ? tracked_module_name->c_str() : "<null>");
-                        Utils::append_string(buff, buff_n, " prot=0x");
-                        Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);*/
-                        Utils::append_char(buff, buff_n, '\n');
-                        //self->trace_file.flush();
-                        
-                        /*gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
-                        if (name != nullptr) {
-                            self->resolved_cache[(size_t)jump_addr] = name;
-                            sym_name = &self->resolved_cache[(size_t)jump_addr];
-                            g_free(name);
-                        }*/
-                    }
-                }
-            }
-
-            if (sym_name != nullptr && !sym_name->empty()) {
+            if (self->func_maps.count(jump_addr) > 0) {
+                sym_name = &self->func_maps[jump_addr];
                 self->last_func_context.info_n = 0;
                 self->last_func_context.address = jump_addr;
                 self->last_func_context.name = sym_name->c_str();
                 memcpy(&self->last_func_context.cpu_context, cpu_context, sizeof(GumCpuContext));
                 self->last_func_context.call = true;
+
                 FuncPrinter::before(&self->last_func_context);
             }
 #            if PLATFORM_ANDROID
@@ -377,7 +306,36 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                 FuncPrinter::jni_before(&self->last_func_context);
             }
 #endif
+            else {
+                // 2. 静态表没有 → 运行时动态解析
+                const std::string *module_name_ptr = self->in_range_module(jump_addr);
+                if (module_name_ptr == nullptr) {//排除本模块内的地址，不排除的话trace大小会很大
+                    if (sym_name == nullptr) {
+                        auto cache_it = self->resolved_cache.find(jump_addr);
+                        if (cache_it != self->resolved_cache.end()) {
+                            sym_name = &cache_it->second;
+                        } else {
+                            // 3. 缓存也没有 → 运行时动态解析
+                            //    这里能正确处理懒加载已解析后的真实地址
+                            gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
+                            if (name != nullptr) {
+                                self->resolved_cache[(size_t)jump_addr] = name;
+                                sym_name = &self->resolved_cache[(size_t)jump_addr];
+                                g_free(name);
+                            }
+                        }
 
+                        if (sym_name != nullptr && !sym_name->empty()) {
+                            self->last_func_context.info_n = 0;
+                            self->last_func_context.address = jump_addr;
+                            self->last_func_context.name = sym_name->c_str();
+                            memcpy(&self->last_func_context.cpu_context, cpu_context, sizeof(GumCpuContext));
+                            self->last_func_context.call = true;
+                            FuncPrinter::before(&self->last_func_context);
+                        }
+                    }
+                }
+            }
         }
     }
 
