@@ -330,6 +330,9 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                     } else {
                         // 3. 缓存也没有 → 运行时动态解析
                         //    这里能正确处理懒加载已解析后的真实地址
+                        GumModule *target_module = gum_process_find_module_by_address((GumAddress) jump_addr);
+                        const gchar *target_module_name = gum_module_get_name(target_module);
+                        const gchar *target_module_path = gum_module_get_path(target_module);
                         Utils::append_string(buff, buff_n, "[unknown_jump] insn=");
                         Utils::append_string(buff, buff_n, callback_ctx->instruction.mnemonic);
                         Utils::append_string(buff, buff_n, " addr=0x");
@@ -339,6 +342,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                         Utils::append_string(buff, buff_n, " prot=0x");
                         Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);
                         Utils::append_char(buff, buff_n, '\n');
+                        self->trace_file.flush();
                         
                         gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
                         if (name != nullptr) {
