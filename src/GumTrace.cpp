@@ -303,16 +303,16 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         } else if (callback_ctx->instruction.id == ARM64_INS_BLR &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_REG) {
             Utils::get_register_value(callback_ctx->instruction_detail.arm64.operands[0].reg, cpu_context, jump_addr);
-        } /*else if (callback_ctx->instruction.id == ARM64_INS_BR &&
+        } else if (callback_ctx->instruction.id == ARM64_INS_BR &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_REG) {
             Utils::get_register_value(callback_ctx->instruction_detail.arm64.operands[0].reg, cpu_context, jump_addr);
         } else if (callback_ctx->instruction.id == ARM64_INS_B &&
                    callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_IMM) {
             jump_addr = callback_ctx->instruction_detail.arm64.operands[0].imm;
-        }*/
+        }
 
-        //if (jump_addr > 0) {
-        if (should_resolve_call_target(callback_ctx->instruction.id, jump_addr)) {
+        if (jump_addr > 0) {
+        //if (should_resolve_call_target(callback_ctx->instruction.id, jump_addr)) {
             // 1. 优先查静态符号表
             const std::string *sym_name = nullptr;
             auto it = self->func_maps.find(jump_addr);
