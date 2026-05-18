@@ -330,6 +330,9 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                     } else {
                         // 3. 缓存也没有 → 运行时动态解析
                         //    这里能正确处理懒加载已解析后的真实地址
+                        GumPageProtection protection = GUM_PAGE_NO_ACCESS;
+                        gboolean has_protection = gum_memory_query_protection((gconstpointer) (uintptr_t) jump_addr, &protection);
+                        const std::string *tracked_module_name = self->in_range_module(jump_addr);
                         GumModule *target_module = gum_process_find_module_by_address((GumAddress) jump_addr);
                         const gchar *target_module_name = gum_module_get_name(target_module);
                         const gchar *target_module_path = gum_module_get_path(target_module);
