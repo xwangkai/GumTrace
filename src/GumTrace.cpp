@@ -330,20 +330,20 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                     } else {
                         // 3. 缓存也没有 → 运行时动态解析
                         //    这里能正确处理懒加载已解析后的真实地址
-                        GumPageProtection protection = GUM_PAGE_NO_ACCESS;
+                        /*GumPageProtection protection = GUM_PAGE_NO_ACCESS;
                         gboolean has_protection = gum_memory_query_protection((gconstpointer) (uintptr_t) jump_addr, &protection);
                         const std::string *tracked_module_name = self->in_range_module(jump_addr);
                         GumModule *target_module = gum_process_find_module_by_address((GumAddress) jump_addr);
                         const gchar *target_module_name = gum_module_get_name(target_module);
-                        const gchar *target_module_path = gum_module_get_path(target_module);
+                        const gchar *target_module_path = gum_module_get_path(target_module);*/
                         Utils::append_string(buff, buff_n, "[unknown_jump] insn=");
                         Utils::append_string(buff, buff_n, callback_ctx->instruction.mnemonic);
                         Utils::append_string(buff, buff_n, " addr=0x");
                         Utils::append_uint64_hex(buff, buff_n, (uintptr_t) jump_addr);
-                        Utils::append_string(buff, buff_n, " tracked=");
+                        /*Utils::append_string(buff, buff_n, " tracked=");
                         Utils::append_string(buff, buff_n, tracked_module_name != nullptr ? tracked_module_name->c_str() : "<null>");
                         Utils::append_string(buff, buff_n, " prot=0x");
-                        Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);
+                        Utils::append_uint64_hex(buff, buff_n, has_protection ? protection : 0xffffffff);*/
                         Utils::append_char(buff, buff_n, '\n');
                         self->trace_file.flush();
                         
