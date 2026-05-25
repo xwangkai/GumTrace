@@ -213,8 +213,11 @@ void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len
         return;
     }
 
-    auto GumTrace = GumTrace::get_instance();
-    if (GumTrace->options.mode == GUM_OPTIONS_MODE_STABLE && GumTrace->find_range_by_address((uintptr_t)str) == nullptr) {
+    // 过滤高位异常地址（符号扩展的负数、内核地址等）
+    if ((uint64_t)str > 0x0000007FFFFFFFFFULL) return;
+
+    auto instance = GumTrace::get_instance();
+    if (instance->options.mode == GUM_OPTIONS_MODE_STABLE && instance->find_range_by_address((uintptr_t)str) == nullptr) {
         return;
     }
 
@@ -425,8 +428,8 @@ void FuncPrinter::before(FUNC_CONTEXT *func_context) {
 
 void FuncPrinter::jni_before(FUNC_CONTEXT *func_context) {
     // nothing todo
-    auto GumTrace = GumTrace::get_instance();
-    if (GumTrace->options.mode == GUM_OPTIONS_MODE_DEBUG) {
+    auto instance = GumTrace::get_instance();
+    if (instance->options.mode == GUM_OPTIONS_MODE_DEBUG) {
         LOGE("call jni func: %s", func_context->name);
     }
 }
