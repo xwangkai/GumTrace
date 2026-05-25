@@ -90,7 +90,7 @@ public:
     int atomic_width = 0;
     uintptr_t atomic_counter = 10;
 
-    static gchar *resolve_symbol_safe(uint64_t raw_addr);
+    static gchar *resolve_symbol_safe(gpointer raw_addr);
 
 #if PLATFORM_ANDROID
     JNIEnv *get_run_time_env();
