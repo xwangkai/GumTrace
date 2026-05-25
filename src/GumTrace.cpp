@@ -5,6 +5,7 @@
 #include "GumTrace.h"
 #include "Utils.h"
 #include "FuncPrinter.h"
+#include <dlfcn.h>
 
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
