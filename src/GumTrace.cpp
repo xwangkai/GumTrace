@@ -50,7 +50,7 @@ JNIEnv *GumTrace::get_run_time_env() {
 #endif
 
 gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
-    if (raw_addr <= 0) {
+    if (raw_addr == nullptr) {
         return nullptr;
     }
 
