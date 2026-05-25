@@ -55,7 +55,7 @@ gchar * GumTrace::resolve_symbol_safe(uint64_t raw_addr) {
     }
 
     // ② 用 Frida 自带 API 进一步剥离 PAC（code pointer）
-    gpointer stripped = gum_strip_code_pointer(GSIZE_TO_POINTER(addr));
+    gpointer stripped = gum_strip_code_pointer(GSIZE_TO_POINTER(raw_addr));
 
     // ③ 现在才安全地调用符号解析
     gchar *name = gum_symbol_name_from_address(stripped);
@@ -347,7 +347,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                                 sym_name = &self->resolved_cache[(size_t)jump_addr];
                                 g_free(name);
                             }*/
-                            gchar *name = resolve_symbol_safe((gpointer)(uintptr_t)jump_addr);
+                            gchar *name = GumTrace::resolve_symbol_safe((gpointer)(uintptr_t)jump_addr);
                             if (name != nullptr) {
                                 self->resolved_cache[(size_t)jump_addr] = name;
                                 sym_name = &self->resolved_cache[(size_t)jump_addr];
