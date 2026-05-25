@@ -49,6 +49,30 @@ JNIEnv *GumTrace::get_run_time_env() {
 
 #endif
 
+gchar * GumTrace::resolve_symbol_safe(uint64_t raw_addr) {
+    if (raw_addr <= 0) {
+        return nullptr;
+    }
+
+    // ② 用 Frida 自带 API 进一步剥离 PAC（code pointer）
+    gpointer stripped = gum_strip_code_pointer(GSIZE_TO_POINTER(addr));
+
+    // ③ 现在才安全地调用符号解析
+    gchar *name = gum_symbol_name_from_address(stripped);
+    if (name) {
+        return name;  // 直接返回，调用方负责 g_free
+    }
+
+    // ④ fallback：模块名 + 偏移
+    GumDebugSymbolDetails details;
+    if (gum_symbol_details_from_address(stripped, &details)) {
+        return g_strdup_printf("%s+0x%lx",
+                               details.module_name,
+                               (uint64_t)stripped - (uint64_t)details.symbol_address);
+    }
+
+    return nullptr;//g_strdup("");
+}
 
 
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
@@ -317,7 +341,13 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                         } else {
                             // 3. 缓存也没有 → 运行时动态解析
                             //    这里能正确处理懒加载已解析后的真实地址
-                            gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
+                            /*gchar *name = gum_symbol_name_from_address((gpointer)(uintptr_t)jump_addr);
+                            if (name != nullptr) {
+                                self->resolved_cache[(size_t)jump_addr] = name;
+                                sym_name = &self->resolved_cache[(size_t)jump_addr];
+                                g_free(name);
+                            }*/
+                            gchar *name = resolve_symbol_safe((gpointer)(uintptr_t)jump_addr);
                             if (name != nullptr) {
                                 self->resolved_cache[(size_t)jump_addr] = name;
                                 sym_name = &self->resolved_cache[(size_t)jump_addr];
