@@ -49,26 +49,23 @@ JNIEnv *GumTrace::get_run_time_env() {
 
 #endif
 
-gchar * GumTrace::resolve_symbol_safe(uint64_t raw_addr) {
+gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
     if (raw_addr <= 0) {
         return nullptr;
     }
 
-    // ② 用 Frida 自带 API 进一步剥离 PAC（code pointer）
     gpointer stripped = gum_strip_code_pointer(GSIZE_TO_POINTER(raw_addr));
 
-    // ③ 现在才安全地调用符号解析
     gchar *name = gum_symbol_name_from_address(stripped);
     if (name) {
         return name;  // 直接返回，调用方负责 g_free
     }
 
-    // ④ fallback：模块名 + 偏移
     GumDebugSymbolDetails details;
     if (gum_symbol_details_from_address(stripped, &details)) {
         return g_strdup_printf("%s+0x%lx",
                                details.module_name,
-                               (uint64_t)stripped - (uint64_t)details.symbol_address);
+                               (uint64_t)stripped - (uint64_t)details.address);
     }
 
     return nullptr;//g_strdup("");
