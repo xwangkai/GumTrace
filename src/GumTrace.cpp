@@ -56,6 +56,7 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 
     gpointer stripped = gum_strip_code_pointer(GSIZE_TO_POINTER(raw_addr));
 
+    /*
     gchar *name = gum_symbol_name_from_address(stripped);
     if (name) {
         return name;  // 直接返回，调用方负责 g_free
@@ -66,6 +67,27 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
         return g_strdup_printf("%s+0x%lx",
                                details.module_name,
                                (uint64_t)stripped - (uint64_t)details.address);
+    }*/
+    Dl_info info;
+    if (dladdr(stripped, &info)) {
+        if (info.dli_sname) {
+            // 有符号名
+            return g_strdup(info.dli_sname);
+        }
+        
+        if (info.dli_fname) {
+            // 没有符号名，返回 模块名+偏移
+            return g_strdup_printf("%s+0x%lx",
+                                   info.dli_fname,
+                                   (uint64_t)stripped - (uint64_t)info.dli_saddr);
+        }
+
+        GumDebugSymbolDetails details;
+        if (gum_symbol_details_from_address(stripped, &details)) {
+            return g_strdup_printf("%s+0x%lx",
+                                details.module_name,
+                                (uint64_t)stripped - (uint64_t)details.address);
+        }
     }
 
     return nullptr;//g_strdup("");
