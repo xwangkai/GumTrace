@@ -6,6 +6,7 @@
 #include "Utils.h"
 #include "FuncPrinter.h"
 #include <dlfcn.h>
+#include <sys/mman.h>
 
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
@@ -69,13 +70,19 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
                                details.module_name,
                                (uint64_t)stripped - (uint64_t)details.address);
     }*/
+
+    gpointer page = (gpointer)((uintptr_t)raw_addr & ~0xFFFULL);
+    if(!(msync(page, 1, MS_ASYNC) == 0)){
+        return nullptr;
+    }
+
     Dl_info info;
     if (dladdr(stripped, &info)) {
         if (info.dli_sname) {
             // 有符号名
             return g_strdup(info.dli_sname);
         }
-        
+
         if (info.dli_fname) {
             // 没有符号名，返回 模块名+偏移
             return g_strdup_printf("%s+0x%lx",
