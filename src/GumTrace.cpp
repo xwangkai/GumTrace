@@ -651,6 +651,21 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
+        GumMemoryAccess access = gum_stalker_iterator_get_memory_access(it);
+        if (access != GUM_MEMORY_ACCESS_OPEN) {
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
+        // Even in diagnostic modes, keep skipping atomics/exclusive instructions.
+        // Those were already treated as special before, and instrumenting them
+        // can make it look like "any callout crashes" when the real issue is
+        // this instruction class.
+        if (Utils::is_lse(p_insn)) {
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
         if (kMinimalNoopCalloutMode) {
             gum_stalker_iterator_put_callout(it, callout_callback, nullptr, nullptr);
             gum_stalker_iterator_keep(it);
@@ -670,14 +685,12 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
-        if (Utils::is_lse(p_insn) == false) {
-            const auto& module = self->get_module_by_name(*module_name_ptr);
+        const auto& module = self->get_module_by_name(*module_name_ptr);
 
-            auto callback_ctx = self->callback_context_instance->pull(p_insn, module_name_ptr->c_str(),
-                                                                      module.at("base"));
-            if (callback_ctx != nullptr) {
-                gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
-            }
+        auto callback_ctx = self->callback_context_instance->pull(p_insn, module_name_ptr->c_str(),
+                                                                  module.at("base"));
+        if (callback_ctx != nullptr) {
+            gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
         }
 
         gum_stalker_iterator_keep(it);
