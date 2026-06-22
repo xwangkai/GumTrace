@@ -705,43 +705,10 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
 }
 
 void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_context, gpointer user_data) {
+    (void) event;
     (void) cpu_context;
-
-    auto self = static_cast<GumTrace *>(user_data);
-    if (self == nullptr || event == nullptr || event->type != GUM_EXEC) {
-        return;
-    }
-
-    uintptr_t pc = reinterpret_cast<uintptr_t>(event->exec.location);
-    const std::string *module_name_ptr = self->in_range_module(pc);
-    if (module_name_ptr == nullptr) {
-        return;
-    }
-
-    const auto &module = self->get_module_by_name(*module_name_ptr);
-    uintptr_t module_base = module.at("base");
-
-    char line[256];
-    int written = snprintf(
-        line,
-        sizeof(line),
-        "[%s] 0x%llx!0x%llx\n",
-        module_name_ptr->c_str(),
-        (unsigned long long) pc,
-        (unsigned long long) (pc - module_base));
-    if (written <= 0) {
-        return;
-    }
-
-    size_t safe_written = static_cast<size_t>(written);
-    if (safe_written >= sizeof(line)) {
-        safe_written = sizeof(line) - 1;
-    }
-
-    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
-    if (self->trace_file.is_open()) {
-        self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
-    }
+    (void) user_data;
+    return;
 }
 
 const std::string *GumTrace::in_range_module(size_t address) {
