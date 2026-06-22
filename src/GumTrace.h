@@ -55,6 +55,13 @@ struct TRACE_PAUSE_CALL_STATE {
     uintptr_t return_sp = 0;
 };
 
+struct TRACE_BREADCRUMB {
+    uintptr_t pc = 0;
+    uintptr_t module_base = 0;
+    uint64_t insn_id = 0;
+    char mnemonic[32] = {};
+};
+
 class GumTrace {
 public:
     static GumTrace *get_instance();

@@ -27,6 +27,7 @@ CALLBACK_CTX* CallbackContext::pull(const cs_insn* _instruction, csh _handle, co
     }
 
     CALLBACK_CTX *ctx = &list[curr_index++];
+    memset(ctx, 0, sizeof(CALLBACK_CTX));
     ctx->handle = _handle;
     ctx->module_name = module_name;
     ctx->module_base = module_base;

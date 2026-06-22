@@ -8,6 +8,8 @@
 #include <dlfcn.h>
 #include <sys/mman.h>
 
+static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
+
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
     return &instance;
@@ -165,6 +167,11 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
+    g_trace_breadcrumb.pc = cpu_context->pc;
+    g_trace_breadcrumb.module_base = callback_ctx->module_base;
+    g_trace_breadcrumb.insn_id = callback_ctx->instruction.id;
+    strncpy(g_trace_breadcrumb.mnemonic, callback_ctx->instruction.mnemonic, sizeof(g_trace_breadcrumb.mnemonic) - 1);
+    g_trace_breadcrumb.mnemonic[sizeof(g_trace_breadcrumb.mnemonic) - 1] = '\0';
     char *buff = self->buffer;
     int &buff_n = self->buffer_offset;
 
