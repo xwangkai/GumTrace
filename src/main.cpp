@@ -155,8 +155,9 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     instance->trace_thread_id = thread_id;
 
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalInstructionTraceMode = true;
-    if (kMinimalStalkerOnlyMode || kMinimalInstructionTraceMode) {
+    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalInstructionTraceMode = false;
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalInstructionTraceMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
         gum_stalker_set_ratio(instance->_stalker, 2);
@@ -326,8 +327,9 @@ void run() {
 
     GumTrace *instance = GumTrace::get_instance();
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalInstructionTraceMode = true;
-    if (kMinimalStalkerOnlyMode || kMinimalInstructionTraceMode) {
+    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalInstructionTraceMode = false;
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalInstructionTraceMode) {
         instance->follow();
         return;
     }

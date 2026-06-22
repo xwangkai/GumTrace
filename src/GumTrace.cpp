@@ -13,7 +13,8 @@ static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
 constexpr bool kMinimalStalkerOnlyMode = false;
-constexpr bool kMinimalInstructionTraceMode = true;
+constexpr bool kMinimalNoopCalloutMode = true;
+constexpr bool kMinimalInstructionTraceMode = false;
 
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
@@ -246,6 +247,10 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 
 
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
+    if (kMinimalNoopCalloutMode) {
+        return;
+    }
+
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
     if (callback_ctx == nullptr) {
@@ -642,6 +647,12 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
     while (gum_stalker_iterator_next(it, (const cs_insn **) &p_insn)) {
         const std::string *module_name_ptr = self->in_range_module(p_insn->address);
         if (module_name_ptr == nullptr) {
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
+        if (kMinimalNoopCalloutMode) {
+            gum_stalker_iterator_put_callout(it, callout_callback, nullptr, nullptr);
             gum_stalker_iterator_keep(it);
             continue;
         }
