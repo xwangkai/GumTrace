@@ -152,6 +152,17 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     GumTrace *instance = GumTrace::get_instance();
     memcpy(&instance->options, options, sizeof(GUM_OPTIONS));
     instance->configure_pause_trace_call(0, 0);
+    instance->trace_thread_id = thread_id;
+
+    const bool kMinimalStalkerOnlyMode = true;
+    if (kMinimalStalkerOnlyMode) {
+        instance->_stalker = gum_stalker_new();
+        gum_stalker_set_trust_threshold(instance->_stalker, 0);
+        gum_stalker_set_ratio(instance->_stalker, 2);
+        gum_process_enumerate_modules(module_enumerate, nullptr);
+        return;
+    }
+
     instance->safa_ranges.clear();
 
     gum_process_enumerate_ranges(GUM_PAGE_READ, on_range_found, &instance->safa_ranges);
@@ -195,7 +206,6 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     }
     memcpy(instance->trace_file_path, trace_file_path, path_len);
     instance->trace_file_path[path_len] = '\0';
-    instance->trace_thread_id = thread_id;
     instance->trace_file = std::ofstream(instance->trace_file_path, std::ios::out | std::ios::trunc);
 
     for (const auto& svc_name : svc_names) {
@@ -289,6 +299,12 @@ extern "C" __attribute__((visibility("default")))
 void run() {
 
     GumTrace *instance = GumTrace::get_instance();
+    const bool kMinimalStalkerOnlyMode = true;
+    if (kMinimalStalkerOnlyMode) {
+        instance->follow();
+        return;
+    }
+
     instance->flush_thread_running.store(true);
     pthread_create(&instance->flush_thread, NULL, thread_function, nullptr);
     instance->follow();

@@ -12,6 +12,8 @@
 static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
+constexpr bool kMinimalStalkerOnlyMode = true;
+
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
         "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",
@@ -598,6 +600,13 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
 
     cs_insn *p_insn;
     auto *it = iterator;
+    if (kMinimalStalkerOnlyMode) {
+        while (gum_stalker_iterator_next(it, (const cs_insn **) &p_insn)) {
+            gum_stalker_iterator_keep(it);
+        }
+        return;
+    }
+
     while (gum_stalker_iterator_next(it, (const cs_insn **) &p_insn)) {
         const std::string *module_name_ptr = self->in_range_module(p_insn->address);
         if (module_name_ptr == nullptr) {
