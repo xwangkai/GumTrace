@@ -218,7 +218,19 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
     const bool trace_paused = self->is_trace_paused_for_call(cpu_context);
     if (trace_paused) {
-        goto skip_call;
+        self->trace_flush++;
+        if (self->options.mode == GUM_OPTIONS_MODE_DEBUG) {
+            if (self->trace_flush > 20) {
+                if (buff_n > 0) {
+                    self->trace_file.write(buff, buff_n);
+                    buff_n = 0;
+                }
+
+                self->trace_file.flush();
+                self->trace_flush = 0;
+            }
+        }
+        return;
     }
 
     Utils::append_char(buff, buff_n, '[');
