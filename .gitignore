@@ -4,3 +4,6 @@ build_android
 .idea
 src/taint/build/
 __pycache__
+/build_android_local
+/build_android_ninja
+/build_local

@@ -56,7 +56,7 @@ public:
     static void format_uint128_hex(__uint128_t value, int& counter, char* buff);
     static void auto_snprintf(int& counter, char* buff, const char* __restrict __format, ...);
 
-    static inline void append_string(char* buff, int& counter, const char* str, int capacity = BUFFER_SIZE) {
+    static inline void append_string(char* buff, int& counter, const char* str, int capacity = 1024 * 1024 * 50) {
         if (!str) return;
         while (*str && counter < capacity - 1) {
             buff[counter++] = *str++;
@@ -66,7 +66,7 @@ public:
         }
     }
     
-    static inline void append_char(char* buff, int& counter, char c, int capacity = BUFFER_SIZE) {
+    static inline void append_char(char* buff, int& counter, char c, int capacity = 1024 * 1024 * 50) {
         if (counter < capacity - 1) {
             buff[counter++] = c;
             buff[counter] = '\0';
