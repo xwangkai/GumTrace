@@ -13,7 +13,8 @@ static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
 constexpr bool kMinimalStalkerOnlyMode = false;
-constexpr bool kMinimalNoopCalloutMode = true;
+constexpr bool kMinimalNoopCalloutMode = false;
+constexpr bool kMinimalEventSinkExecMode = true;
 constexpr bool kMinimalInstructionTraceMode = false;
 
 const char *get_reg_name_safe(arm64_reg reg) {
@@ -129,6 +130,7 @@ GumTrace::GumTrace() {
 GumTrace::~GumTrace() {
     if (_stalker) g_object_unref(_stalker);
     if (_transformer) g_object_unref(_transformer);
+    if (_event_sink) g_object_unref(_event_sink);
 }
 
 void GumTrace::configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset) {
@@ -672,6 +674,11 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
+        if (kMinimalEventSinkExecMode) {
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
         if (kMinimalInstructionTraceMode) {
             const auto &module = self->get_module_by_name(*module_name_ptr);
             auto callback_ctx = self->callback_context_instance->pull(
@@ -694,6 +701,46 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
         }
 
         gum_stalker_iterator_keep(it);
+    }
+}
+
+void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_context, gpointer user_data) {
+    (void) cpu_context;
+
+    auto self = static_cast<GumTrace *>(user_data);
+    if (self == nullptr || event == nullptr || event->type != GUM_EXEC) {
+        return;
+    }
+
+    uintptr_t pc = reinterpret_cast<uintptr_t>(event->exec.location);
+    const std::string *module_name_ptr = self->in_range_module(pc);
+    if (module_name_ptr == nullptr) {
+        return;
+    }
+
+    const auto &module = self->get_module_by_name(*module_name_ptr);
+    uintptr_t module_base = module.at("base");
+
+    char line[256];
+    int written = snprintf(
+        line,
+        sizeof(line),
+        "[%s] 0x%llx!0x%llx\n",
+        module_name_ptr->c_str(),
+        (unsigned long long) pc,
+        (unsigned long long) (pc - module_base));
+    if (written <= 0) {
+        return;
+    }
+
+    size_t safe_written = static_cast<size_t>(written);
+    if (safe_written >= sizeof(line)) {
+        safe_written = sizeof(line) - 1;
+    }
+
+    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+    if (self->trace_file.is_open()) {
+        self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
     }
 }
 

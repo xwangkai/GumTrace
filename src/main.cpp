@@ -155,9 +155,10 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     instance->trace_thread_id = thread_id;
 
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalNoopCalloutMode = false;
+    const bool kMinimalEventSinkExecMode = true;
     const bool kMinimalInstructionTraceMode = false;
-    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalInstructionTraceMode) {
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
         gum_stalker_set_ratio(instance->_stalker, 2);
@@ -178,7 +179,7 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
         gum_process_enumerate_modules(module_enumerate, nullptr);
 
-        if (kMinimalInstructionTraceMode) {
+        if (kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
             size_t path_len = strlen(trace_file_path);
             if (path_len >= sizeof(instance->trace_file_path)) {
                 path_len = sizeof(instance->trace_file_path) - 1;
@@ -186,6 +187,14 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
             memcpy(instance->trace_file_path, trace_file_path, path_len);
             instance->trace_file_path[path_len] = '\0';
             instance->trace_file = std::ofstream(instance->trace_file_path, std::ios::out | std::ios::trunc);
+        }
+
+        if (kMinimalEventSinkExecMode) {
+            instance->_event_sink = gum_event_sink_make_from_callback(
+                GUM_EXEC,
+                GumTrace::event_sink_callback,
+                instance,
+                nullptr);
         }
         return;
     }
@@ -327,10 +336,13 @@ void run() {
 
     GumTrace *instance = GumTrace::get_instance();
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalNoopCalloutMode = false;
+    const bool kMinimalEventSinkExecMode = true;
     const bool kMinimalInstructionTraceMode = false;
-    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalInstructionTraceMode) {
-        instance->follow();
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
+        instance->trace_thread_id > 0
+            ? gum_stalker_follow(instance->_stalker, instance->trace_thread_id, instance->_transformer, instance->_event_sink)
+            : gum_stalker_follow_me(instance->_stalker, instance->_transformer, instance->_event_sink);
         return;
     }
 

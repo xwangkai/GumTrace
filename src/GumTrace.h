@@ -81,6 +81,7 @@ public:
 
     GumStalker* _stalker;
     GumStalkerTransformer* _transformer;
+    GumEventSink* _event_sink = nullptr;
 
     CallbackContext* callback_context_instance;
 
@@ -92,6 +93,7 @@ public:
     void unfollow();
 
     static void callout_callback(GumCpuContext *cpu_context, gpointer user_data);
+    static void event_sink_callback(const GumEvent *event, GumCpuContext *cpu_context, gpointer user_data);
 
     char buffer[BUFFER_SIZE] = {};
     int buffer_offset = 0;
