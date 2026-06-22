@@ -179,7 +179,7 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
         gum_process_enumerate_modules(module_enumerate, nullptr);
 
-        if (kMinimalInstructionTraceMode) {
+        if (kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
             size_t path_len = strlen(trace_file_path);
             if (path_len >= sizeof(instance->trace_file_path)) {
                 path_len = sizeof(instance->trace_file_path) - 1;
