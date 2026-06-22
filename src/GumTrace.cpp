@@ -29,9 +29,13 @@ void GumTrace::configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t c
     pause_call_config.callee_offset = callee_offset;
     pause_call_state.active = false;
     pause_call_state.return_address = 0;
+    pause_call_state.return_sp = 0;
 }
 
-bool GumTrace::should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, uint64_t insn_id, __uint128_t jump_addr) {
+bool GumTrace::should_pause_trace_for_call(const GumCpuContext *cpu_context,
+                                           uintptr_t module_base,
+                                           uint64_t insn_id,
+                                           __uint128_t jump_addr) {
     if (!pause_call_config.enabled || pause_call_state.active) {
         return false;
     }
@@ -40,6 +44,7 @@ bool GumTrace::should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, 
         return false;
     }
 
+    uintptr_t pc = cpu_context->pc;
     uintptr_t pc_offset = pc - module_base;
     if (pc_offset != pause_call_config.callsite_offset) {
         return false;
@@ -51,16 +56,18 @@ bool GumTrace::should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, 
     }
 
     pause_call_state.active = true;
-    pause_call_state.return_address = pc + 4;
+    pause_call_state.return_address = cpu_context->lr;
+    pause_call_state.return_sp = cpu_context->sp;
     return true;
 }
 
-bool GumTrace::is_trace_paused_for_call(uintptr_t pc) {
+bool GumTrace::is_trace_paused_for_call(const GumCpuContext *cpu_context) {
     if (!pause_call_state.active) {
         return false;
     }
 
-    if (pc == pause_call_state.return_address) {
+    if (cpu_context->pc == pause_call_state.return_address &&
+        cpu_context->sp == pause_call_state.return_sp) {
         resume_trace_after_call();
         return false;
     }
@@ -71,6 +78,7 @@ bool GumTrace::is_trace_paused_for_call(uintptr_t pc) {
 void GumTrace::resume_trace_after_call() {
     pause_call_state.active = false;
     pause_call_state.return_address = 0;
+    pause_call_state.return_sp = 0;
 }
 
 #if PLATFORM_ANDROID
@@ -155,10 +163,6 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
-    if (self->is_trace_paused_for_call(cpu_context->pc)) {
-        return;
-    }
-
     char *buff = self->buffer;
     int &buff_n = self->buffer_offset;
 
@@ -210,6 +214,11 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 #endif
 
         self->trace_file.write(self->last_func_context.info, self->last_func_context.info_n);
+    }
+
+    const bool trace_paused = self->is_trace_paused_for_call(cpu_context);
+    if (trace_paused) {
+        goto skip_call;
     }
 
     Utils::append_char(buff, buff_n, '[');
@@ -388,7 +397,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         }
 
         if (jump_addr > 0) {
-            if (self->should_pause_trace_for_call(cpu_context->pc,
+            if (self->should_pause_trace_for_call(cpu_context,
                                                   callback_ctx->module_base,
                                                   callback_ctx->instruction.id,
                                                   jump_addr)) {

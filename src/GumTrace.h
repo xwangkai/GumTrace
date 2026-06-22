@@ -52,6 +52,7 @@ struct TRACE_PAUSE_CALL_CONFIG {
 struct TRACE_PAUSE_CALL_STATE {
     bool active = false;
     uintptr_t return_address = 0;
+    uintptr_t return_sp = 0;
 };
 
 class GumTrace {
@@ -104,8 +105,8 @@ public:
     uintptr_t atomic_counter = 10;
 
     static gchar *resolve_symbol_safe(gpointer raw_addr);
-    bool should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, uint64_t insn_id, __uint128_t jump_addr);
-    bool is_trace_paused_for_call(uintptr_t pc);
+    bool should_pause_trace_for_call(const GumCpuContext *cpu_context, uintptr_t module_base, uint64_t insn_id, __uint128_t jump_addr);
+    bool is_trace_paused_for_call(const GumCpuContext *cpu_context);
     void resume_trace_after_call();
     void configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset);
 
