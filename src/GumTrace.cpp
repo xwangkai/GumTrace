@@ -12,7 +12,8 @@
 static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
-constexpr bool kMinimalStalkerOnlyMode = true;
+constexpr bool kMinimalStalkerOnlyMode = false;
+constexpr bool kMinimalInstructionTraceMode = true;
 
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
@@ -248,6 +249,37 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
     if (callback_ctx == nullptr) {
+        return;
+    }
+
+    if (kMinimalInstructionTraceMode) {
+        char line[512];
+        const char *mnemonic = callback_ctx->instruction.mnemonic[0] != '\0'
+            ? callback_ctx->instruction.mnemonic
+            : "";
+        const char *op_str = callback_ctx->instruction.op_str[0] != '\0'
+            ? callback_ctx->instruction.op_str
+            : "";
+        int written = snprintf(
+            line,
+            sizeof(line),
+            "[%s] 0x%llx!0x%llx %s %s\n",
+            callback_ctx->module_name != nullptr ? callback_ctx->module_name : "",
+            (unsigned long long) cpu_context->pc,
+            (unsigned long long) (cpu_context->pc - callback_ctx->module_base),
+            mnemonic,
+            op_str);
+        if (written > 0) {
+            size_t safe_written = static_cast<size_t>(written);
+            if (safe_written >= sizeof(line)) {
+                safe_written = sizeof(line) - 1;
+            }
+
+            std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+            if (self->trace_file.is_open()) {
+                self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+            }
+        }
         return;
     }
 
@@ -610,6 +642,19 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
     while (gum_stalker_iterator_next(it, (const cs_insn **) &p_insn)) {
         const std::string *module_name_ptr = self->in_range_module(p_insn->address);
         if (module_name_ptr == nullptr) {
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
+        if (kMinimalInstructionTraceMode) {
+            const auto &module = self->get_module_by_name(*module_name_ptr);
+            auto callback_ctx = self->callback_context_instance->pull(
+                p_insn,
+                module_name_ptr->c_str(),
+                module.at("base"));
+            if (callback_ctx != nullptr) {
+                gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
+            }
             gum_stalker_iterator_keep(it);
             continue;
         }

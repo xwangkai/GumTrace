@@ -154,12 +154,38 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     instance->configure_pause_trace_call(0, 0);
     instance->trace_thread_id = thread_id;
 
-    const bool kMinimalStalkerOnlyMode = true;
-    if (kMinimalStalkerOnlyMode) {
+    const bool kMinimalStalkerOnlyMode = false;
+    const bool kMinimalInstructionTraceMode = true;
+    if (kMinimalStalkerOnlyMode || kMinimalInstructionTraceMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
         gum_stalker_set_ratio(instance->_stalker, 2);
+
+        auto module_names_vector = Utils::str_split(module_names, ',');
+        for (const auto &module_name: module_names_vector) {
+            auto *gum_module = gum_process_find_module_by_name(module_name.c_str());
+            if (gum_module == nullptr) {
+                LOGE("module not found: %s", module_name.c_str());
+                continue;
+            }
+
+            auto &module_map = instance->modules[module_name];
+            auto *gum_module_range = gum_module_get_range(gum_module);
+            module_map["base"] = gum_module_range->base_address;
+            module_map["size"] = gum_module_range->size;
+        }
+
         gum_process_enumerate_modules(module_enumerate, nullptr);
+
+        if (kMinimalInstructionTraceMode) {
+            size_t path_len = strlen(trace_file_path);
+            if (path_len >= sizeof(instance->trace_file_path)) {
+                path_len = sizeof(instance->trace_file_path) - 1;
+            }
+            memcpy(instance->trace_file_path, trace_file_path, path_len);
+            instance->trace_file_path[path_len] = '\0';
+            instance->trace_file = std::ofstream(instance->trace_file_path, std::ios::out | std::ios::trunc);
+        }
         return;
     }
 
@@ -299,8 +325,9 @@ extern "C" __attribute__((visibility("default")))
 void run() {
 
     GumTrace *instance = GumTrace::get_instance();
-    const bool kMinimalStalkerOnlyMode = true;
-    if (kMinimalStalkerOnlyMode) {
+    const bool kMinimalStalkerOnlyMode = false;
+    const bool kMinimalInstructionTraceMode = true;
+    if (kMinimalStalkerOnlyMode || kMinimalInstructionTraceMode) {
         instance->follow();
         return;
     }
