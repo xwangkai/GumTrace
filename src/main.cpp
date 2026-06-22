@@ -191,7 +191,7 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
         if (kMinimalEventSinkExecMode) {
             instance->_event_sink = gum_event_sink_make_from_callback(
-                GUM_EXEC,
+                GUM_BLOCK,
                 GumTrace::event_sink_callback,
                 instance,
                 nullptr);
