@@ -59,7 +59,10 @@ gboolean module_dependency_cb (const GumDependencyDetails * details, gpointer us
 }
 
 gboolean on_range_found(const GumRangeDetails *details, gpointer user_data) {
-    auto instance = GumTrace::get_instance();
+    auto *ranges = static_cast<std::vector<RangeInfo> *>(user_data);
+    if (ranges == nullptr) {
+        return TRUE;
+    }
 
     RangeInfo info;
     info.base = (uintptr_t) details->range->base_address;
@@ -72,7 +75,7 @@ gboolean on_range_found(const GumRangeDetails *details, gpointer user_data) {
         info.file_path = "maybe heap";
     }
 
-    instance->safa_ranges.push_back(info);
+    ranges->push_back(info);
     return TRUE;
 }
 
@@ -149,15 +152,16 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     GumTrace *instance = GumTrace::get_instance();
     memcpy(&instance->options, options, sizeof(GUM_OPTIONS));
     instance->configure_pause_trace_call(0, 0);
+    instance->safa_ranges.clear();
+
+    gum_process_enumerate_ranges(GUM_PAGE_READ, on_range_found, &instance->safa_ranges);
+    std::sort(instance->safa_ranges.begin(), instance->safa_ranges.end(),
+      [](const RangeInfo &a, const RangeInfo &b) { return a.base < b.base; });
 
     instance->_stalker = gum_stalker_new();
     gum_stalker_set_trust_threshold(instance->_stalker, 0);
     gum_stalker_set_ratio(instance->_stalker, 2);
     if (instance->options.mode == GUM_OPTIONS_MODE_STABLE) {
-        gum_process_enumerate_ranges(GUM_PAGE_RW, on_range_found, nullptr);
-
-        std::sort(instance->safa_ranges.begin(), instance->safa_ranges.end(),
-          [](const RangeInfo &a, const RangeInfo &b) { return a.base < b.base; });
         gum_stalker_set_trust_threshold(instance->_stalker, 2);
         gum_stalker_set_ratio(instance->_stalker, 5);
     }
@@ -233,31 +237,41 @@ void* thread_function(void* arg) {
     GumTrace *instance = GumTrace::get_instance();
     size_t last_size = 0;
 
-    while (true) {
-        if (instance->trace_file.is_open()) {
-            if (!(instance->options.mode == GUM_OPTIONS_MODE_DEBUG)) {
-                struct stat stat_buf;
-                int ret = stat(instance->trace_file_path, &stat_buf);
-
-                if (ret == 0) {
-                    off_t growth = stat_buf.st_size - last_size;
-                    off_t growth_mb = growth / (1024 * 1024);
-                    off_t size_gb = stat_buf.st_size / (1024 * 1024 * 1024);
-
-                    LOGE("每20秒新增：%ldMB 当前文件大小：%ldGB",
-                         growth_mb, size_gb);
-                    last_size = stat_buf.st_size;
-                } else {
-                    LOGE("stat 失败，错误码：%d，错误信息：%s",
-                         errno, strerror(errno));
-                    LOGE("文件路径：%s", instance->trace_file_path);
-                }
+    while (instance->flush_thread_running.load()) {
+        {
+            std::lock_guard<std::mutex> lock(instance->trace_file_mutex);
+            if (!instance->trace_file.is_open()) {
+                LOGE("trace_file 未打开");
+                break;
             }
+        }
 
-            instance->trace_file.flush();
-        } else {
-            LOGE("trace_file 未打开");
-            break;
+        if (!(instance->options.mode == GUM_OPTIONS_MODE_DEBUG)) {
+            struct stat stat_buf;
+            int ret = stat(instance->trace_file_path, &stat_buf);
+
+            if (ret == 0) {
+                off_t growth = stat_buf.st_size - last_size;
+                off_t growth_mb = growth / (1024 * 1024);
+                off_t size_gb = stat_buf.st_size / (1024 * 1024 * 1024);
+
+                LOGE("每20秒新增：%ldMB 当前文件大小：%ldGB",
+                     growth_mb, size_gb);
+                last_size = stat_buf.st_size;
+            } else {
+                LOGE("stat 失败，错误码：%d，错误信息：%s",
+                     errno, strerror(errno));
+                LOGE("文件路径：%s", instance->trace_file_path);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(instance->trace_file_mutex);
+            if (!(instance->options.mode == GUM_OPTIONS_MODE_DEBUG)) {
+                instance->trace_file.flush();
+            } else {
+                instance->trace_file.flush();
+            }
         }
 
         if (instance->options.mode == GUM_OPTIONS_MODE_DEBUG) {
@@ -274,10 +288,9 @@ void* thread_function(void* arg) {
 extern "C" __attribute__((visibility("default")))
 void run() {
 
-    pthread_t thread1;
-    pthread_create(&thread1, NULL, thread_function, nullptr);
-
     GumTrace *instance = GumTrace::get_instance();
+    instance->flush_thread_running.store(true);
+    pthread_create(&instance->flush_thread, NULL, thread_function, nullptr);
     instance->follow();
 }
 

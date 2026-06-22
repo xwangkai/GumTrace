@@ -11,6 +11,8 @@
 #include <fstream>
 #include <array>
 #include <sstream>
+#include <atomic>
+#include <mutex>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/mman.h>

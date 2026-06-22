@@ -217,13 +217,19 @@ void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len
     if ((uint64_t)str > 0x0000007FFFFFFFFFULL) return;
 
     auto instance = GumTrace::get_instance();
-    if (instance->options.mode == GUM_OPTIONS_MODE_STABLE && instance->find_range_by_address((uintptr_t)str) == nullptr) {
+    const auto *range = instance->find_range_by_address((uintptr_t)str);
+    if (range == nullptr) {
         return;
     }
 
+    size_t readable = range->end - (uintptr_t)str;
+    if (readable == 0) {
+        return;
+    }
 
+    size_t safe_len = std::min(max_len, readable);
     size_t i = 0;
-    while (i < max_len && buff_n < BUFFER_SIZE - 1 && str[i]) {
+    while (i < safe_len && buff_n < BUFFER_SIZE - 1 && str[i]) {
         buff[buff_n++] = str[i++];
     }
 }
@@ -237,14 +243,21 @@ void FuncPrinter::hexdump(int& buff_n, char *buff, uint64_t address, size_t coun
     }
 
     auto GumTrace = GumTrace::get_instance();
-    if (GumTrace->options.mode == GUM_OPTIONS_MODE_STABLE && GumTrace->find_range_by_address((uintptr_t)address) == nullptr) {
+    const auto *range = GumTrace->find_range_by_address((uintptr_t)address);
+    if (range == nullptr) {
         return;
     }
 
     auto bytePtr = (char*)(address);
-    if (count == 0) {
-        count = strnlen(bytePtr, 4096);
+    size_t readable = range->end - (uintptr_t)address;
+    if (readable == 0) {
+        return;
     }
+
+    if (count == 0) {
+        count = strnlen(bytePtr, std::min<size_t>(4096, readable));
+    }
+    count = std::min(count, readable);
 
     size_t offset = 0;
     size_t total_lines = (count + 15) / 16;  // 向上取整

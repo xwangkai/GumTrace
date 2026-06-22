@@ -61,6 +61,9 @@ public:
     std::map<std::string, std::map<std::string, std::size_t>> modules;
     char trace_file_path[256];
     std::ofstream trace_file;
+    std::mutex trace_file_mutex;
+    std::atomic<bool> flush_thread_running{false};
+    pthread_t flush_thread{};
     int trace_thread_id;
     int trace_flush = 0;
     std::unordered_map<size_t, std::string> func_maps;

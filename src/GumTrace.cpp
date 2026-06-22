@@ -169,6 +169,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
     int &buff_n = self->buffer_offset;
 
     if (buff_n > BUFFER_SIZE - 1024) {
+        std::lock_guard<std::mutex> lock(self->trace_file_mutex);
         self->trace_file.write(buff, buff_n);
         buff_n = 0;
     }
@@ -195,6 +196,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
     if (self->last_func_context.call) {
         if (buff_n > 0) {
+            std::lock_guard<std::mutex> lock(self->trace_file_mutex);
             self->trace_file.write(buff, buff_n);
             buff_n = 0;
         }
@@ -215,7 +217,10 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
 #endif
 
-        self->trace_file.write(self->last_func_context.info, self->last_func_context.info_n);
+        {
+            std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+            self->trace_file.write(self->last_func_context.info, self->last_func_context.info_n);
+        }
     }
 
     const bool trace_paused = self->is_trace_paused_for_call(cpu_context);
@@ -224,10 +229,12 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         if (self->options.mode == GUM_OPTIONS_MODE_DEBUG) {
             if (self->trace_flush > 20) {
                 if (buff_n > 0) {
+                    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
                     self->trace_file.write(buff, buff_n);
                     buff_n = 0;
                 }
 
+                std::lock_guard<std::mutex> lock(self->trace_file_mutex);
                 self->trace_file.flush();
                 self->trace_flush = 0;
             }
@@ -491,10 +498,12 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
     if (self->options.mode == GUM_OPTIONS_MODE_DEBUG) {
         if (self->trace_flush > 20) {
             if (buff_n > 0) {
+                std::lock_guard<std::mutex> lock(self->trace_file_mutex);
                 self->trace_file.write(buff, buff_n);
                 buff_n = 0;
             }
 
+            std::lock_guard<std::mutex> lock(self->trace_file_mutex);
             self->trace_file.flush();
             self->trace_flush = 0;
         }
@@ -595,7 +604,14 @@ void GumTrace::follow() {
 
 void GumTrace::unfollow() {
     trace_thread_id > 0 ? gum_stalker_unfollow(_stalker, trace_thread_id) : gum_stalker_unfollow_me(_stalker);
+    flush_thread_running.store(false);
 
+    if (flush_thread != 0) {
+        pthread_join(flush_thread, nullptr);
+        flush_thread = 0;
+    }
+
+    std::lock_guard<std::mutex> lock(trace_file_mutex);
     if (trace_file.is_open()) {
         trace_file.write(buffer, buffer_offset);
         buffer_offset = 0;
