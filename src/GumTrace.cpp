@@ -13,8 +13,8 @@ static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
 constexpr bool kMinimalStalkerOnlyMode = false;
-constexpr bool kMinimalNoopCalloutMode = false;
-constexpr bool kMinimalEventSinkExecMode = true;
+constexpr bool kMinimalNoopCalloutMode = true;
+constexpr bool kMinimalEventSinkExecMode = false;
 constexpr bool kMinimalInstructionTraceMode = false;
 
 const char *get_reg_name_safe(arm64_reg reg) {
