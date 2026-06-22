@@ -43,6 +43,17 @@ struct RangeInfo {
     std::string file_path;
 };
 
+struct TRACE_PAUSE_CALL_CONFIG {
+    bool enabled = false;
+    uintptr_t callsite_offset = 0;
+    uintptr_t callee_offset = 0;
+};
+
+struct TRACE_PAUSE_CALL_STATE {
+    bool active = false;
+    uintptr_t return_address = 0;
+};
+
 class GumTrace {
 public:
     static GumTrace *get_instance();
@@ -82,6 +93,8 @@ public:
 
     GUM_OPTIONS options;
     std::vector<RangeInfo> safa_ranges;
+    TRACE_PAUSE_CALL_CONFIG pause_call_config;
+    TRACE_PAUSE_CALL_STATE pause_call_state;
 
     std::unordered_map<size_t, std::string> svc_func_maps;
     std::unordered_map<size_t, std::string> func_fds;
@@ -91,6 +104,10 @@ public:
     uintptr_t atomic_counter = 10;
 
     static gchar *resolve_symbol_safe(gpointer raw_addr);
+    bool should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, uint64_t insn_id, __uint128_t jump_addr);
+    bool is_trace_paused_for_call(uintptr_t pc);
+    void resume_trace_after_call();
+    void configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset);
 
 #if PLATFORM_ANDROID
     JNIEnv *get_run_time_env();

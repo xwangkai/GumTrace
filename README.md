@@ -100,6 +100,17 @@ GumTrace 编译为共享库，导出以下 C 接口：
 
 启动追踪。会创建一个后台线程定期刷写日志文件。
 
+### `set_pause_trace_call(callsite_offset, callee_offset)`
+
+配置一条“进入指定调用时暂停 trace，函数返回后继续”的规则。
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `callsite_offset` | `uint64_t` | 调用指令在目标模块内的 offset，例如 `BL` 所在地址的模块内偏移 |
+| `callee_offset` | `uint64_t` | 被调函数在目标模块内的 offset |
+
+示例：命中 `.text:00000000002A8D34  BL  sub_15B044` 时暂停 `sub_15B044` 函数体内的 trace，并在返回到 `0x2A8D38` 后自动恢复。
+
 ### `unrun()`
 
 停止追踪，刷写并关闭日志文件。

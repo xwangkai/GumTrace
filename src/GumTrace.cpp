@@ -23,6 +23,56 @@ GumTrace::~GumTrace() {
     if (_transformer) g_object_unref(_transformer);
 }
 
+void GumTrace::configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset) {
+    pause_call_config.enabled = callsite_offset != 0 && callee_offset != 0;
+    pause_call_config.callsite_offset = callsite_offset;
+    pause_call_config.callee_offset = callee_offset;
+    pause_call_state.active = false;
+    pause_call_state.return_address = 0;
+}
+
+bool GumTrace::should_pause_trace_for_call(uintptr_t pc, uintptr_t module_base, uint64_t insn_id, __uint128_t jump_addr) {
+    if (!pause_call_config.enabled || pause_call_state.active) {
+        return false;
+    }
+
+    if (insn_id != ARM64_INS_BL) {
+        return false;
+    }
+
+    uintptr_t pc_offset = pc - module_base;
+    if (pc_offset != pause_call_config.callsite_offset) {
+        return false;
+    }
+
+    uintptr_t target_offset = (uintptr_t) jump_addr - module_base;
+    if (target_offset != pause_call_config.callee_offset) {
+        return false;
+    }
+
+    pause_call_state.active = true;
+    pause_call_state.return_address = pc + 4;
+    return true;
+}
+
+bool GumTrace::is_trace_paused_for_call(uintptr_t pc) {
+    if (!pause_call_state.active) {
+        return false;
+    }
+
+    if (pc == pause_call_state.return_address) {
+        resume_trace_after_call();
+        return false;
+    }
+
+    return true;
+}
+
+void GumTrace::resume_trace_after_call() {
+    pause_call_state.active = false;
+    pause_call_state.return_address = 0;
+}
+
 #if PLATFORM_ANDROID
 
 JNIEnv *GumTrace::get_run_time_env() {
@@ -105,6 +155,10 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
+    if (self->is_trace_paused_for_call(cpu_context->pc)) {
+        return;
+    }
+
     char *buff = self->buffer;
     int &buff_n = self->buffer_offset;
 
@@ -334,6 +388,13 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         }
 
         if (jump_addr > 0) {
+            if (self->should_pause_trace_for_call(cpu_context->pc,
+                                                  callback_ctx->module_base,
+                                                  callback_ctx->instruction.id,
+                                                  jump_addr)) {
+                goto skip_call;
+            }
+
             const std::string *sym_name = nullptr;
             if (self->func_maps.count(jump_addr) > 0) {
                 sym_name = &self->func_maps[jump_addr];

@@ -148,6 +148,7 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
     GumTrace *instance = GumTrace::get_instance();
     memcpy(&instance->options, options, sizeof(GUM_OPTIONS));
+    instance->configure_pause_trace_call(0, 0);
 
     instance->_stalker = gum_stalker_new();
     gum_stalker_set_trust_threshold(instance->_stalker, 0);
@@ -278,6 +279,12 @@ void run() {
 
     GumTrace *instance = GumTrace::get_instance();
     instance->follow();
+}
+
+extern "C" __attribute__((visibility("default")))
+void set_pause_trace_call(uint64_t callsite_offset, uint64_t callee_offset) {
+    GumTrace *instance = GumTrace::get_instance();
+    instance->configure_pause_trace_call(callsite_offset, callee_offset);
 }
 
 extern "C" __attribute__((visibility("default")))
