@@ -88,14 +88,16 @@ JNIEnv *GumTrace::get_run_time_env() {
         return nullptr;
     }
 
-    if (jni_env == nullptr) {
-        java_vm->GetEnv((void**)&jni_env, JNI_VERSION_1_6);
+    JNIEnv *current_env = nullptr;
+    if (java_vm->GetEnv((void **)&current_env, JNI_VERSION_1_6) != JNI_OK) {
+        return nullptr;
     }
 
-    if (jni_env != nullptr && jni_env_init == false) {
+    if (current_env != nullptr && jni_env_init == false) {
         jni_env_init = true;
+        jni_env = current_env;
 
-        auto jni_func_table = (uint64_t)jni_env->functions;
+        auto jni_func_table = (uint64_t)current_env->functions;
         int index = 0;
         for (const auto &func_name: jni_func_names) {
             auto func_addr_ptr = (void **)(jni_func_table + index * sizeof(void *));
@@ -104,7 +106,7 @@ JNIEnv *GumTrace::get_run_time_env() {
             index++;
         }
     }
-    return jni_env;
+    return current_env;
 }
 
 #endif
@@ -260,7 +262,9 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                 Utils::append_char(buff, buff_n, ' ');
             }
             is_write = true;
-            self->write_reg_list.regs[self->write_reg_list.num++] = op.reg;
+            if (self->write_reg_list.num < (int)(sizeof(self->write_reg_list.regs) / sizeof(self->write_reg_list.regs[0]))) {
+                self->write_reg_list.regs[self->write_reg_list.num++] = op.reg;
+            }
         } else if (op.access & CS_AC_READ && op.type == ARM64_OP_REG) {
             if (Utils::get_register_value(op.reg, cpu_context, reg_value)) {
 
@@ -303,7 +307,9 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (strstr(callback_ctx->instruction.op_str, "],") || strstr(callback_ctx->instruction.op_str, "]!")) {
                 is_write = true;
-                self->write_reg_list.regs[self->write_reg_list.num++] = op.mem.base;
+                if (self->write_reg_list.num < (int)(sizeof(self->write_reg_list.regs) / sizeof(self->write_reg_list.regs[0]))) {
+                    self->write_reg_list.regs[self->write_reg_list.num++] = op.mem.base;
+                }
             }
         }  else if ((op.access & CS_AC_WRITE) && op.type == ARM64_OP_MEM) {
             __uint128_t base = 0;
@@ -375,7 +381,9 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
             }
 
             is_write = true;
-            self->write_reg_list.regs[self->write_reg_list.num++] = op.reg;
+            if (self->write_reg_list.num < (int)(sizeof(self->write_reg_list.regs) / sizeof(self->write_reg_list.regs[0]))) {
+                self->write_reg_list.regs[self->write_reg_list.num++] = op.reg;
+            }
         }
     }
 
