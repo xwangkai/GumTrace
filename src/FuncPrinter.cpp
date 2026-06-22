@@ -444,116 +444,11 @@ void FuncPrinter::before(FUNC_CONTEXT *func_context) {
 #if PLATFORM_ANDROID
 
 void FuncPrinter::jni_before(FUNC_CONTEXT *func_context) {
-    // nothing todo
-    auto instance = GumTrace::get_instance();
-    if (instance->options.mode == GUM_OPTIONS_MODE_DEBUG) {
-        LOGE("call jni func: %s", func_context->name);
-    }
+    (void)func_context;
 }
 
 void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_context) {
-    auto instance = GumTrace::get_instance();
-    JNIEnv *env = instance->get_run_time_env();
-    if (env == nullptr) {
-        Utils::auto_snprintf(func_context->info_n, func_context->info, "call jni func: %s\nret: 0x", func_context->name);
-        Utils::append_uint64_hex(func_context->info, func_context->info_n, curr_cpu_context->x[0]);
-        Utils::append_char(func_context->info, func_context->info_n, '\n');
-        return;
-    }
-
-    Utils::auto_snprintf(func_context->info_n, func_context->info, "call jni func: %s", func_context->name);
-
-    auto it = after_jni_func_configs.find(func_context->name);
-    if (it == after_jni_func_configs.end()) {
-        params_join(func_context, 0);
-    } else {
-        const auto& config = it->second;
-        params_join(func_context, config.params_number);
-
-        for (int reg_index: config.jni_string_indices) {
-            auto jstr = (jstring)(func_context->cpu_context.x[reg_index]);
-            if (jstr != nullptr) {
-                const char *cstr = env->GetStringUTFChars(jstr, nullptr);
-                if (cstr != nullptr) {
-                    Utils::auto_snprintf(func_context->info_n, func_context->info, "\nargs%d: ", reg_index);
-                    read_string(func_context->info_n, func_context->info, (char*)cstr);
-                    env->ReleaseStringUTFChars(jstr, cstr);
-                }
-            }
-        }
-
-        for (int reg_index: config.curr_jni_string_indices) {
-            auto jstr = (jstring)(curr_cpu_context->x[reg_index]);
-            if (jstr != nullptr) {
-                const char *cstr = env->GetStringUTFChars(jstr, nullptr);
-                if (cstr != nullptr) {
-                    Utils::auto_snprintf(func_context->info_n, func_context->info, "\nargs%d: ", reg_index);
-                    read_string(func_context->info_n, func_context->info, (char*)cstr);
-                    env->ReleaseStringUTFChars(jstr, cstr);
-                }
-            }
-        }
-
-        for (int reg_index : config.string_indices) {
-            Utils::auto_snprintf(func_context->info_n, func_context->info, "\nargs%d: ", reg_index);
-            read_string(func_context->info_n, func_context->info, (char*)func_context->cpu_context.x[reg_index]);
-        }
-
-        for (int reg_index : config.curr_string_indices) {
-            Utils::auto_snprintf(func_context->info_n, func_context->info, "\nargs%d: ", reg_index);
-            read_string(func_context->info_n, func_context->info, (char*)curr_cpu_context->x[reg_index]);
-        }
-
-        for (std::array<int, 2> reg_pair: config.hexdump_indices) {
-            hexdump(func_context->info_n, func_context->info, func_context->cpu_context.x[reg_pair[0]], reg_pair[1] == HEX_INDEX_SPECIAL_32 ? 0 : func_context->cpu_context.x[reg_pair[1]]);
-        }
-
-        for (std::array<int, 2> reg_pair: config.curr_hexdump_indices) {
-            hexdump(func_context->info_n, func_context->info, curr_cpu_context->x[reg_pair[0]], reg_pair[1] == HEX_INDEX_SPECIAL_32 ? 0 : curr_cpu_context->x[reg_pair[1]]);
-        }
-    }
-
-    if (strcmp(func_context->name, "FindClass") == 0 || strcmp(func_context->name, "DefineClass") == 0) {
-        char jclass_name[1024] = {0};
-        int jclass_name_n = 0;
-        read_string(jclass_name_n, jclass_name, (char*)func_context->cpu_context.x[1], 1024, sizeof(jclass_name));
-        if (jclass_name_n > 0) {
-            instance->jni_classes[curr_cpu_context->x[0]] = jclass_name;
-        }
-    } else if (strcmp(func_context->name, "GetMethodID") == 0 || strcmp(func_context->name, "GetStaticMethodID") == 0) {
-        char jmethod_name[4096] = {0};
-        int jmethod_name_n = 0;
-
-        read_string(jmethod_name_n, jmethod_name, (char*)func_context->cpu_context.x[2], 1024, sizeof(jmethod_name));
-        if (jmethod_name_n > 0) {
-            instance->jni_methods[curr_cpu_context->x[0]] = jmethod_name;
-        }
-
-        if (instance->jni_classes.count(func_context->cpu_context.x[1]) > 0) {
-            auto jclass_name = instance->jni_classes[func_context->cpu_context.x[1]];
-
-            Utils::auto_snprintf(func_context->info_n, func_context->info, "\njclass: %s", jclass_name.c_str());
-            instance->jni_methods_classes[curr_cpu_context->x[0]] = jclass_name;
-        }
-    }
-
-    if (call_jni_methods.count(func_context->name) > 0) {
-        if (instance->jni_classes.count(func_context->cpu_context.x[1]) > 0) {
-             Utils::auto_snprintf(func_context->info_n, func_context->info, "\njclass: %s", instance->jni_classes[func_context->cpu_context.x[1]].c_str());
-        }
-
-        if (instance->jni_methods.count(func_context->cpu_context.x[2]) > 0) {
-            Utils::auto_snprintf(func_context->info_n, func_context->info, "\njmethod: %s", instance->jni_methods[func_context->cpu_context.x[2]].c_str());
-
-            if (instance->jni_methods_classes.count(func_context->cpu_context.x[2]) > 0) {
-                 Utils::auto_snprintf(func_context->info_n, func_context->info, "\njclass: %s", instance->jni_methods_classes[func_context->cpu_context.x[2]].c_str());
-            }
-        }
-    }
-
-    Utils::append_string(func_context->info, func_context->info_n, "\nret: 0x");
-    Utils::append_uint64_hex(func_context->info, func_context->info_n, curr_cpu_context->x[0]);
-    Utils::append_char(func_context->info, func_context->info_n, '\n');
+    after(func_context, curr_cpu_context);
 }
 
 #endif

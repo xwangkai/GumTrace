@@ -84,33 +84,9 @@ void GumTrace::resume_trace_after_call() {
 }
 
 #if PLATFORM_ANDROID
-
 JNIEnv *GumTrace::get_run_time_env() {
-    if (java_vm == nullptr) {
-        return nullptr;
-    }
-
-    JNIEnv *current_env = nullptr;
-    if (java_vm->GetEnv((void **)&current_env, JNI_VERSION_1_6) != JNI_OK) {
-        return nullptr;
-    }
-
-    if (current_env != nullptr && jni_env_init == false) {
-        jni_env_init = true;
-        jni_env = current_env;
-
-        auto jni_func_table = (uint64_t)current_env->functions;
-        int index = 0;
-        for (const auto &func_name: jni_func_names) {
-            auto func_addr_ptr = (void **)(jni_func_table + index * sizeof(void *));
-            auto func_addr = (uint64_t)(*func_addr_ptr);
-            jni_func_maps[func_addr] = func_name;
-            index++;
-        }
-    }
-    return current_env;
+    return nullptr;
 }
-
 #endif
 
 gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
@@ -210,14 +186,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
         self->last_func_context.call = false;
 #        if PLATFORM_ANDROID
-
-        if (self->last_func_context.is_jni) {
-            self->last_func_context.is_jni = false;
-            FuncPrinter::jni_after(&self->last_func_context, cpu_context);
-        } else {
-            FuncPrinter::after(&self->last_func_context, cpu_context);
-        }
-
+        FuncPrinter::after(&self->last_func_context, cpu_context);
 #        else
 
             FuncPrinter::after(&self->last_func_context, cpu_context);
@@ -449,18 +418,6 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
                 FuncPrinter::before(&self->last_func_context);
             }
-#if PLATFORM_ANDROID
-            else if (self->get_run_time_env() != nullptr && self->jni_func_maps.count(jump_addr) > 0) {
-                self->last_func_context.info_n = 0;
-                self->last_func_context.address = jump_addr;
-                self->last_func_context.name = self->jni_func_maps[jump_addr].c_str();
-                memcpy(&self->last_func_context.cpu_context, cpu_context, sizeof(GumCpuContext));
-                self->last_func_context.call = true;
-                self->last_func_context.is_jni = true;
-
-                FuncPrinter::jni_before(&self->last_func_context);
-            }
-#endif
             else {
                 // 2. 静态表没有 → 运行时动态解析
                 const std::string *module_name_ptr = self->in_range_module(jump_addr);
