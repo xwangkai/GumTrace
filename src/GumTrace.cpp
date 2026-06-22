@@ -13,9 +13,15 @@ static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
 
 namespace {
 constexpr bool kMinimalStalkerOnlyMode = false;
-constexpr bool kMinimalNoopCalloutMode = true;
+constexpr bool kMinimalNoopCalloutMode = false;
 constexpr bool kMinimalEventSinkExecMode = false;
 constexpr bool kMinimalInstructionTraceMode = false;
+constexpr bool kSelectiveCalloutMode = false;
+constexpr bool kFullCalloutProbeMode = true;
+
+static uint64_t get_current_tid_safe() {
+    return static_cast<uint64_t>(syscall(SYS_gettid));
+}
 
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
@@ -142,6 +148,11 @@ void GumTrace::configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t c
     pause_call_state.return_sp = 0;
 }
 
+void GumTrace::configure_single_callout(uintptr_t instruction_offset) {
+    single_callout_config.enabled = instruction_offset != 0;
+    single_callout_config.instruction_offset = instruction_offset;
+}
+
 bool GumTrace::should_pause_trace_for_call(const GumCpuContext *cpu_context,
                                            uintptr_t module_base,
                                            uint64_t insn_id,
@@ -249,13 +260,39 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 
 
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
-    if (kMinimalNoopCalloutMode) {
-        return;
-    }
-
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
     if (callback_ctx == nullptr) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+        if (self->trace_file.is_open()) {
+            char line[256];
+            int written = snprintf(
+                line,
+                sizeof(line),
+                "[callout-enter] seq=%llu tid=%llu [%s] 0x%llx!0x%llx %s %s\n",
+                (unsigned long long) callback_ctx->sequence,
+                (unsigned long long) get_current_tid_safe(),
+                callback_ctx->module_name != nullptr ? callback_ctx->module_name : "",
+                (unsigned long long) cpu_context->pc,
+                (unsigned long long) (cpu_context->pc - callback_ctx->module_base),
+                callback_ctx->instruction.mnemonic,
+                callback_ctx->instruction.op_str);
+            if (written > 0) {
+                size_t safe_written = static_cast<size_t>(written);
+                if (safe_written >= sizeof(line)) {
+                    safe_written = sizeof(line) - 1;
+                }
+                self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+                self->trace_file.flush();
+            }
+        }
+    }
+
+    if (kMinimalNoopCalloutMode || kSelectiveCalloutMode || kFullCalloutProbeMode) {
         return;
     }
 
@@ -668,8 +705,96 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
+        if (kSelectiveCalloutMode) {
+            uintptr_t module_base = self->get_module_by_name(*module_name_ptr).at("base");
+            uintptr_t insn_offset = static_cast<uintptr_t>(p_insn->address) - module_base;
+            if (self->single_callout_config.enabled &&
+                insn_offset == self->single_callout_config.instruction_offset) {
+                auto callback_ctx = self->callback_context_instance->pull(
+                    p_insn,
+                    module_name_ptr->c_str(),
+                    module_base);
+                if (callback_ctx != nullptr) {
+                    callback_ctx->sequence = self->probe_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+                    if (self->trace_file.is_open()) {
+                        char line[320];
+                        int written = snprintf(
+                            line,
+                            sizeof(line),
+                            "[callout-arm] seq=%llu tid=%llu [%s] 0x%llx!0x%llx %s %s\n",
+                            (unsigned long long) (callback_ctx != nullptr ? callback_ctx->sequence : 0),
+                            (unsigned long long) get_current_tid_safe(),
+                            module_name_ptr->c_str(),
+                            (unsigned long long) p_insn->address,
+                            (unsigned long long) insn_offset,
+                            p_insn->mnemonic,
+                            p_insn->op_str);
+                        if (written > 0) {
+                            size_t safe_written = static_cast<size_t>(written);
+                            if (safe_written >= sizeof(line)) {
+                                safe_written = sizeof(line) - 1;
+                            }
+                            self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+                            self->trace_file.flush();
+                        }
+                    }
+                }
+                if (callback_ctx != nullptr) {
+                    gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
+                }
+            }
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
         if (kMinimalNoopCalloutMode) {
             gum_stalker_iterator_put_callout(it, callout_callback, nullptr, nullptr);
+            gum_stalker_iterator_keep(it);
+            continue;
+        }
+
+        if (kFullCalloutProbeMode) {
+            const auto &module = self->get_module_by_name(*module_name_ptr);
+            uintptr_t module_base = module.at("base");
+            uintptr_t insn_offset = static_cast<uintptr_t>(p_insn->address) - module_base;
+            auto callback_ctx = self->callback_context_instance->pull(
+                p_insn,
+                module_name_ptr->c_str(),
+                module_base);
+            if (callback_ctx != nullptr) {
+                callback_ctx->sequence = self->probe_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+            }
+            {
+                std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+                if (self->trace_file.is_open()) {
+                    char line[320];
+                    int written = snprintf(
+                        line,
+                        sizeof(line),
+                        "[callout-arm] seq=%llu tid=%llu [%s] 0x%llx!0x%llx %s %s\n",
+                        (unsigned long long) (callback_ctx != nullptr ? callback_ctx->sequence : 0),
+                        (unsigned long long) get_current_tid_safe(),
+                        module_name_ptr->c_str(),
+                        (unsigned long long) p_insn->address,
+                        (unsigned long long) insn_offset,
+                        p_insn->mnemonic,
+                        p_insn->op_str);
+                    if (written > 0) {
+                        size_t safe_written = static_cast<size_t>(written);
+                        if (safe_written >= sizeof(line)) {
+                            safe_written = sizeof(line) - 1;
+                        }
+                        self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+                        self->trace_file.flush();
+                    }
+                }
+            }
+            if (callback_ctx != nullptr) {
+                gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
+            }
             gum_stalker_iterator_keep(it);
             continue;
         }
@@ -722,8 +847,13 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
     const auto &module = self->get_module_by_name(*module_name_ptr);
     uintptr_t module_base = module.at("base");
 
+    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+    if (!self->trace_file.is_open()) {
+        return;
+    }
+
     char line[256];
-    int written = snprintf(
+    int block_written = snprintf(
         line,
         sizeof(line),
         "[%s] block 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
@@ -732,19 +862,51 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
         (unsigned long long) (start - module_base),
         (unsigned long long) end,
         (unsigned long long) (end - module_base));
-    if (written <= 0) {
-        return;
-    }
-
-    size_t safe_written = static_cast<size_t>(written);
-    if (safe_written >= sizeof(line)) {
-        safe_written = sizeof(line) - 1;
-    }
-
-    std::lock_guard<std::mutex> lock(self->trace_file_mutex);
-    if (self->trace_file.is_open()) {
+    if (block_written > 0) {
+        size_t safe_written = static_cast<size_t>(block_written);
+        if (safe_written >= sizeof(line)) {
+            safe_written = sizeof(line) - 1;
+        }
         self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
     }
+
+    for (uintptr_t insn = start; insn + 4 <= end; insn += 4) {
+        uint32_t raw = *reinterpret_cast<const uint32_t *>(insn);
+        int insn_written = snprintf(
+            line,
+            sizeof(line),
+            "  0x%llx!0x%llx raw=0x%08x\n",
+            (unsigned long long) insn,
+            (unsigned long long) (insn - module_base),
+            raw);
+        if (insn_written <= 0) {
+            continue;
+        }
+
+        size_t safe_insn_written = static_cast<size_t>(insn_written);
+        if (safe_insn_written >= sizeof(line)) {
+            safe_insn_written = sizeof(line) - 1;
+        }
+        self->trace_file.write(line, static_cast<std::streamsize>(safe_insn_written));
+    }
+
+    if (end > start && ((end - start) % 4) != 0) {
+        int tail_written = snprintf(
+            line,
+            sizeof(line),
+            "  [warn] non-4-byte tail at 0x%llx size=0x%llx\n",
+            (unsigned long long) end,
+            (unsigned long long) (end - start));
+        if (tail_written > 0) {
+            size_t safe_tail_written = static_cast<size_t>(tail_written);
+            if (safe_tail_written >= sizeof(line)) {
+                safe_tail_written = sizeof(line) - 1;
+            }
+            self->trace_file.write(line, static_cast<std::streamsize>(safe_tail_written));
+        }
+    }
+
+    self->trace_file.flush();
 }
 
 const std::string *GumTrace::in_range_module(size_t address) {

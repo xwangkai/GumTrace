@@ -155,10 +155,11 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     instance->trace_thread_id = thread_id;
 
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalNoopCalloutMode = false;
     const bool kMinimalEventSinkExecMode = false;
     const bool kMinimalInstructionTraceMode = false;
-    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
+    const bool kFullCalloutProbeMode = true;
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode || kFullCalloutProbeMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
 
@@ -178,7 +179,7 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
         gum_process_enumerate_modules(module_enumerate, nullptr);
 
-        if (kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
+        if (kMinimalEventSinkExecMode || kMinimalInstructionTraceMode || kFullCalloutProbeMode) {
             size_t path_len = strlen(trace_file_path);
             if (path_len >= sizeof(instance->trace_file_path)) {
                 path_len = sizeof(instance->trace_file_path) - 1;
@@ -333,10 +334,11 @@ void run() {
 
     GumTrace *instance = GumTrace::get_instance();
     const bool kMinimalStalkerOnlyMode = false;
-    const bool kMinimalNoopCalloutMode = true;
+    const bool kMinimalNoopCalloutMode = false;
     const bool kMinimalEventSinkExecMode = false;
     const bool kMinimalInstructionTraceMode = false;
-    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
+    const bool kFullCalloutProbeMode = true;
+    if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode || kFullCalloutProbeMode) {
         instance->trace_thread_id > 0
             ? gum_stalker_follow(instance->_stalker, instance->trace_thread_id, instance->_transformer, instance->_event_sink)
             : gum_stalker_follow_me(instance->_stalker, instance->_transformer, instance->_event_sink);
@@ -352,6 +354,12 @@ extern "C" __attribute__((visibility("default")))
 void set_pause_trace_call(uint64_t callsite_offset, uint64_t callee_offset) {
     GumTrace *instance = GumTrace::get_instance();
     instance->configure_pause_trace_call(callsite_offset, callee_offset);
+}
+
+extern "C" __attribute__((visibility("default")))
+void set_single_callout(uint64_t instruction_offset) {
+    GumTrace *instance = GumTrace::get_instance();
+    instance->configure_single_callout(instruction_offset);
 }
 
 extern "C" __attribute__((visibility("default")))

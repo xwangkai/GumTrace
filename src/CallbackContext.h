@@ -9,6 +9,7 @@
 #define CALLBACK_CTX_SIZE 102400
 
 struct CALLBACK_CTX {
+    uint64_t sequence = 0;
     const char* module_name;
     uint64_t module_base;
     cs_insn instruction{};

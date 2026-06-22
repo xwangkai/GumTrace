@@ -49,6 +49,11 @@ struct TRACE_PAUSE_CALL_CONFIG {
     uintptr_t callee_offset = 0;
 };
 
+struct TRACE_SINGLE_CALLOUT_CONFIG {
+    bool enabled = false;
+    uintptr_t instruction_offset = 0;
+};
+
 struct TRACE_PAUSE_CALL_STATE {
     bool active = false;
     uintptr_t return_address = 0;
@@ -71,6 +76,7 @@ public:
     std::mutex trace_file_mutex;
     std::mutex callback_state_mutex;
     std::atomic<bool> flush_thread_running{false};
+    std::atomic<uint64_t> probe_sequence{0};
     pthread_t flush_thread{};
     int trace_thread_id;
     int trace_flush = 0;
@@ -103,6 +109,7 @@ public:
     std::vector<RangeInfo> safa_ranges;
     TRACE_PAUSE_CALL_CONFIG pause_call_config;
     TRACE_PAUSE_CALL_STATE pause_call_state;
+    TRACE_SINGLE_CALLOUT_CONFIG single_callout_config;
 
     std::unordered_map<size_t, std::string> svc_func_maps;
     std::unordered_map<size_t, std::string> func_fds;
@@ -116,6 +123,7 @@ public:
     bool is_trace_paused_for_call(const GumCpuContext *cpu_context);
     void resume_trace_after_call();
     void configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset);
+    void configure_single_callout(uintptr_t instruction_offset);
 
 #if PLATFORM_ANDROID
     JNIEnv *get_run_time_env();
