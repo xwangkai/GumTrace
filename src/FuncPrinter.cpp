@@ -205,7 +205,7 @@ void FuncPrinter::params_join(FUNC_CONTEXT *func_context, uint count) {
     Utils::append_char(func_context->info, func_context->info_n, ')');
 }
 
-void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len) {
+void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len, size_t buff_capacity) {
     if ((uint64_t)str <= 0x1000) {
         return;
     }
@@ -232,8 +232,8 @@ void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len
 
     size_t safe_len = std::min(std::min(max_len, readable), kMaxTraceStringBytes);
     size_t i = 0;
-    while (i < safe_len && buff_n < BUFFER_SIZE - 1 && str[i]) {
-        Utils::append_char(buff, buff_n, str[i++]);
+    while (i < safe_len && buff_n < (int)buff_capacity - 1 && str[i]) {
+        Utils::append_char(buff, buff_n, str[i++], (int)buff_capacity);
     }
 }
 
@@ -516,7 +516,7 @@ void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_
     if (strcmp(func_context->name, "FindClass") == 0 || strcmp(func_context->name, "DefineClass") == 0) {
         char jclass_name[1024] = {0};
         int jclass_name_n = 0;
-        read_string(jclass_name_n, jclass_name, (char*)func_context->cpu_context.x[1]);
+        read_string(jclass_name_n, jclass_name, (char*)func_context->cpu_context.x[1], 1024, sizeof(jclass_name));
         if (jclass_name_n > 0) {
             instance->jni_classes[curr_cpu_context->x[0]] = jclass_name;
         }
@@ -524,7 +524,7 @@ void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_
         char jmethod_name[4096] = {0};
         int jmethod_name_n = 0;
 
-        read_string(jmethod_name_n, jmethod_name, (char*)func_context->cpu_context.x[2]);
+        read_string(jmethod_name_n, jmethod_name, (char*)func_context->cpu_context.x[2], 1024, sizeof(jmethod_name));
         if (jmethod_name_n > 0) {
             instance->jni_methods[curr_cpu_context->x[0]] = jmethod_name;
         }
