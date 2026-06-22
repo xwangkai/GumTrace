@@ -14,21 +14,17 @@ CallbackContext *CallbackContext::get_instance() {
 
 
 CallbackContext::CallbackContext() {
-    list = (CALLBACK_CTX*)calloc(CALLBACK_CTX_SIZE, sizeof(CALLBACK_CTX));
 }
 
 CallbackContext::~CallbackContext() {
-    free(list);
 }
 
-CALLBACK_CTX* CallbackContext::pull(const cs_insn* _instruction, csh _handle, const char* module_name, uint64_t module_base) {
-    if (curr_index >= CALLBACK_CTX_SIZE) {
-        curr_index = 0;
+CALLBACK_CTX* CallbackContext::pull(const cs_insn* _instruction, const char* module_name, uint64_t module_base) {
+    auto *ctx = static_cast<CALLBACK_CTX *>(calloc(1, sizeof(CALLBACK_CTX)));
+    if (ctx == nullptr) {
+        return nullptr;
     }
 
-    CALLBACK_CTX *ctx = &list[curr_index++];
-    memset(ctx, 0, sizeof(CALLBACK_CTX));
-    ctx->handle = _handle;
     ctx->module_name = module_name;
     ctx->module_base = module_base;
     memcpy(&ctx->instruction, _instruction, sizeof(cs_insn));
@@ -37,6 +33,10 @@ CALLBACK_CTX* CallbackContext::pull(const cs_insn* _instruction, csh _handle, co
     }
     
     return ctx;
+}
+
+void CallbackContext::release(gpointer data) {
+    free(data);
 }
 
 

@@ -69,6 +69,7 @@ public:
     char trace_file_path[256];
     std::ofstream trace_file;
     std::mutex trace_file_mutex;
+    std::mutex callback_state_mutex;
     std::atomic<bool> flush_thread_running{false};
     pthread_t flush_thread{};
     int trace_thread_id;
@@ -95,12 +96,6 @@ public:
     char buffer[BUFFER_SIZE] = {};
     int buffer_offset = 0;
     REG_LIST write_reg_list;
-
-    struct CachedModule {
-        const std::string* name;
-        size_t base;
-        size_t end;
-    } last_module_cache;
 
     GUM_OPTIONS options;
     std::vector<RangeInfo> safa_ranges;

@@ -5,10 +5,112 @@
 #include "GumTrace.h"
 #include "Utils.h"
 #include "FuncPrinter.h"
+#include <cstdio>
 #include <dlfcn.h>
 #include <sys/mman.h>
 
 static thread_local TRACE_BREADCRUMB g_trace_breadcrumb;
+
+namespace {
+const char *get_reg_name_safe(arm64_reg reg) {
+    static const char *kWRegs[] = {
+        "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",
+        "w8", "w9", "w10", "w11", "w12", "w13", "w14", "w15",
+        "w16", "w17", "w18", "w19", "w20", "w21", "w22", "w23",
+        "w24", "w25", "w26", "w27", "w28", "w29", "w30"
+    };
+    static const char *kXRegs[] = {
+        "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+        "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
+        "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23",
+        "x24", "x25", "x26", "x27", "x28"
+    };
+    static const char *kQRegs[] = {
+        "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7",
+        "q8", "q9", "q10", "q11", "q12", "q13", "q14", "q15",
+        "q16", "q17", "q18", "q19", "q20", "q21", "q22", "q23",
+        "q24", "q25", "q26", "q27", "q28", "q29", "q30", "q31"
+    };
+    static const char *kDRegs[] = {
+        "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
+        "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15",
+        "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23",
+        "d24", "d25", "d26", "d27", "d28", "d29", "d30", "d31"
+    };
+    static const char *kSRegs[] = {
+        "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7",
+        "s8", "s9", "s10", "s11", "s12", "s13", "s14", "s15",
+        "s16", "s17", "s18", "s19", "s20", "s21", "s22", "s23",
+        "s24", "s25", "s26", "s27", "s28", "s29", "s30", "s31"
+    };
+    static const char *kHRegs[] = {
+        "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7",
+        "h8", "h9", "h10", "h11", "h12", "h13", "h14", "h15",
+        "h16", "h17", "h18", "h19", "h20", "h21", "h22", "h23",
+        "h24", "h25", "h26", "h27", "h28", "h29", "h30", "h31"
+    };
+    static const char *kBRegs[] = {
+        "b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7",
+        "b8", "b9", "b10", "b11", "b12", "b13", "b14", "b15",
+        "b16", "b17", "b18", "b19", "b20", "b21", "b22", "b23",
+        "b24", "b25", "b26", "b27", "b28", "b29", "b30", "b31"
+    };
+    static const char *kVRegs[] = {
+        "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7",
+        "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15",
+        "v16", "v17", "v18", "v19", "v20", "v21", "v22", "v23",
+        "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31"
+    };
+    static thread_local char fallback[32];
+
+    if (reg >= ARM64_REG_W0 && reg <= ARM64_REG_W30) {
+        return kWRegs[reg - ARM64_REG_W0];
+    }
+    if (reg >= ARM64_REG_X0 && reg <= ARM64_REG_X28) {
+        return kXRegs[reg - ARM64_REG_X0];
+    }
+    if (reg >= ARM64_REG_Q0 && reg <= ARM64_REG_Q31) {
+        return kQRegs[reg - ARM64_REG_Q0];
+    }
+    if (reg >= ARM64_REG_D0 && reg <= ARM64_REG_D31) {
+        return kDRegs[reg - ARM64_REG_D0];
+    }
+    if (reg >= ARM64_REG_S0 && reg <= ARM64_REG_S31) {
+        return kSRegs[reg - ARM64_REG_S0];
+    }
+    if (reg >= ARM64_REG_H0 && reg <= ARM64_REG_H31) {
+        return kHRegs[reg - ARM64_REG_H0];
+    }
+    if (reg >= ARM64_REG_B0 && reg <= ARM64_REG_B31) {
+        return kBRegs[reg - ARM64_REG_B0];
+    }
+    if (reg >= ARM64_REG_V0 && reg <= ARM64_REG_V31) {
+        return kVRegs[reg - ARM64_REG_V0];
+    }
+
+    switch (reg) {
+        case ARM64_REG_SP:
+            return "sp";
+        case ARM64_REG_WSP:
+            return "wsp";
+        case ARM64_REG_FP:
+            return "fp";
+        case ARM64_REG_LR:
+            return "lr";
+        case ARM64_REG_XZR:
+            return "xzr";
+        case ARM64_REG_WZR:
+            return "wzr";
+        case ARM64_REG_NZCV:
+            return "nzcv";
+        case ARM64_REG_INVALID:
+            return "invalid";
+        default:
+            snprintf(fallback, sizeof(fallback), "reg_%d", reg);
+            return fallback;
+    }
+}
+}
 
 GumTrace *GumTrace::get_instance() {
     static GumTrace instance;
@@ -143,6 +245,11 @@ gchar * GumTrace::resolve_symbol_safe(gpointer raw_addr) {
 void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) {
     auto self = get_instance();
     auto callback_ctx = (CALLBACK_CTX *)user_data;
+    if (callback_ctx == nullptr) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> callback_lock(self->callback_state_mutex);
     g_trace_breadcrumb.pc = cpu_context->pc;
     g_trace_breadcrumb.module_base = callback_ctx->module_base;
     g_trace_breadcrumb.insn_id = callback_ctx->instruction.id;
@@ -165,7 +272,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                     Utils::append_string(buff, buff_n, "-> ");
                 }
 
-                const char *reg_name = cs_reg_name(callback_ctx->handle, self->write_reg_list.regs[i]);
+                const char *reg_name = get_reg_name_safe(self->write_reg_list.regs[i]);
                 Utils::append_string(buff, buff_n, reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(reg_value, buff_n, buff);
@@ -238,7 +345,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         if ((op.access & CS_AC_READ) && (op.access & CS_AC_WRITE) && op.type == ARM64_OP_REG) {
             if (Utils::get_register_value(op.reg, cpu_context, reg_value)) {
 
-                const char *reg_name = cs_reg_name(callback_ctx->handle, op.reg);
+                const char *reg_name = get_reg_name_safe(op.reg);
                 Utils::append_string(buff, buff_n, reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(reg_value, buff_n, buff);
@@ -251,7 +358,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         } else if (op.access & CS_AC_READ && op.type == ARM64_OP_REG) {
             if (Utils::get_register_value(op.reg, cpu_context, reg_value)) {
 
-                const char *reg_name = cs_reg_name(callback_ctx->handle, op.reg);
+                const char *reg_name = get_reg_name_safe(op.reg);
                 Utils::append_string(buff, buff_n, reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(reg_value, buff_n, buff);
@@ -264,7 +371,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (op.mem.base != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.base, cpu_context, base);
-                const char *base_reg_name = cs_reg_name(callback_ctx->handle, op.mem.base);
+                const char *base_reg_name = get_reg_name_safe(op.mem.base);
                 Utils::append_string(buff, buff_n, base_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(base, buff_n, buff);
@@ -273,7 +380,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (op.mem.index != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.index, cpu_context, index);
-                const char *index_reg_name = cs_reg_name(callback_ctx->handle, op.mem.index);
+                const char *index_reg_name = get_reg_name_safe(op.mem.index);
                 Utils::append_string(buff, buff_n, index_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(index, buff_n, buff);
@@ -301,7 +408,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (op.mem.base != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.base, cpu_context, base);
-                const char *base_reg_name = cs_reg_name(callback_ctx->handle, op.mem.base);
+                const char *base_reg_name = get_reg_name_safe(op.mem.base);
                 Utils::append_string(buff, buff_n, base_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(base, buff_n, buff);
@@ -310,7 +417,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (op.mem.index != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.index, cpu_context, index);
-                const char *index_reg_name = cs_reg_name(callback_ctx->handle, op.mem.index);
+                const char *index_reg_name = get_reg_name_safe(op.mem.index);
                 Utils::append_string(buff, buff_n, index_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(index, buff_n, buff);
@@ -331,7 +438,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
             if (op.mem.base != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.base, cpu_context, base);
-                const char *base_reg_name = cs_reg_name(callback_ctx->handle, op.mem.base);
+                const char *base_reg_name = get_reg_name_safe(op.mem.base);
                 Utils::append_string(buff, buff_n, base_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(base, buff_n, buff);
@@ -339,7 +446,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
             }
             if (op.mem.index != ARM64_REG_INVALID) {
                 flag = Utils::get_register_value(op.mem.index, cpu_context, index);
-                const char *index_reg_name = cs_reg_name(callback_ctx->handle, op.mem.index);
+                const char *index_reg_name = get_reg_name_safe(op.mem.index);
                 Utils::append_string(buff, buff_n, index_reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(index, buff_n, buff);
@@ -356,7 +463,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         } else if (op.access & CS_AC_WRITE && op.type == ARM64_OP_REG) {
             if (Utils::get_register_value(op.reg, cpu_context, reg_value)) {
 
-                const char *reg_name = cs_reg_name(callback_ctx->handle, op.reg);
+                const char *reg_name = get_reg_name_safe(op.reg);
                 Utils::append_string(buff, buff_n, reg_name);
                 Utils::append_string(buff, buff_n, "=0x");
                 Utils::format_uint128_hex(reg_value, buff_n, buff);
@@ -501,10 +608,11 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
         if (Utils::is_lse(p_insn) == false) {
             const auto& module = self->get_module_by_name(*module_name_ptr);
 
-            auto callback_ctx = self->callback_context_instance->pull(p_insn, gum_stalker_iterator_get_capstone(it),
-                                                                      module_name_ptr->c_str(), module.at("base"));
-
-            gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, nullptr);
+            auto callback_ctx = self->callback_context_instance->pull(p_insn, module_name_ptr->c_str(),
+                                                                      module.at("base"));
+            if (callback_ctx != nullptr) {
+                gum_stalker_iterator_put_callout(it, callout_callback, callback_ctx, CallbackContext::release);
+            }
         }
 
         gum_stalker_iterator_keep(it);
@@ -512,8 +620,17 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
 }
 
 const std::string *GumTrace::in_range_module(size_t address) {
-    if (last_module_cache.name != nullptr && address >= last_module_cache.base && address < last_module_cache.end) {
-        return last_module_cache.name;
+    struct CachedModule {
+        const std::string* name = nullptr;
+        size_t base = 0;
+        size_t end = 0;
+    };
+    static thread_local CachedModule tls_last_module_cache;
+
+    if (tls_last_module_cache.name != nullptr &&
+        address >= tls_last_module_cache.base &&
+        address < tls_last_module_cache.end) {
+        return tls_last_module_cache.name;
     }
 
     for (const auto &pair: modules) {
@@ -522,9 +639,9 @@ const std::string *GumTrace::in_range_module(size_t address) {
         size_t size = module_map.at("size");
         size_t end = base + size;
         if (address >= base && address < end) {
-            last_module_cache.name = &pair.first;
-            last_module_cache.base = base;
-            last_module_cache.end = end;
+            tls_last_module_cache.name = &pair.first;
+            tls_last_module_cache.base = base;
+            tls_last_module_cache.end = end;
             return &pair.first;
         }
     }
