@@ -6,6 +6,9 @@
 #include <cstdio>
 
 namespace {
+constexpr size_t kMaxTraceStringBytes = 256;
+constexpr size_t kMaxTraceHexdumpBytes = 256;
+
 const char *resolve_syscall_name(GumTrace *instance, uint64_t syscall_nr, char *fallback, size_t fallback_size) {
     auto it = instance->svc_func_maps.find(syscall_nr);
     if (it != instance->svc_func_maps.end() && !it->second.empty()) {
@@ -191,15 +194,15 @@ const std::unordered_map<std::string, AfterJniFuncConfig> after_jni_func_configs
 };
 
 void FuncPrinter::params_join(FUNC_CONTEXT *func_context, uint count) {
-    func_context->info[func_context->info_n++] = '(';
+    Utils::append_char(func_context->info, func_context->info_n, '(');
     for (int i = 0; i < count; i++) {
         Utils::auto_snprintf(func_context->info_n, func_context->info, "0x%llx", func_context->cpu_context.x[i]);
         if (i != count - 1) {
-            func_context->info[func_context->info_n++] = ',';
-            func_context->info[func_context->info_n++] = ' ';
+            Utils::append_char(func_context->info, func_context->info_n, ',');
+            Utils::append_char(func_context->info, func_context->info_n, ' ');
         }
     }
-    func_context->info[func_context->info_n++] = ')';
+    Utils::append_char(func_context->info, func_context->info_n, ')');
 }
 
 void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len) {
@@ -227,10 +230,10 @@ void FuncPrinter::read_string(int& buff_n, char *buff, char* str, size_t max_len
         return;
     }
 
-    size_t safe_len = std::min(max_len, readable);
+    size_t safe_len = std::min(std::min(max_len, readable), kMaxTraceStringBytes);
     size_t i = 0;
     while (i < safe_len && buff_n < BUFFER_SIZE - 1 && str[i]) {
-        buff[buff_n++] = str[i++];
+        Utils::append_char(buff, buff_n, str[i++]);
     }
 }
 
@@ -258,6 +261,7 @@ void FuncPrinter::hexdump(int& buff_n, char *buff, uint64_t address, size_t coun
         count = strnlen(bytePtr, std::min<size_t>(4096, readable));
     }
     count = std::min(count, readable);
+    count = std::min(count, kMaxTraceHexdumpBytes);
 
     size_t offset = 0;
     size_t total_lines = (count + 15) / 16;  // 向上取整
@@ -278,9 +282,9 @@ void FuncPrinter::hexdump(int& buff_n, char *buff, uint64_t address, size_t coun
                 Utils::auto_snprintf(buff_n, buff, "%02x ", (unsigned char)byte);
                 ascii[ascii_n++] = std::isprint(byte) ? byte : '.';
             } else {
-                buff[buff_n++] = ' ';
-                buff[buff_n++] = ' ';
-                buff[buff_n++] = ' ';
+                Utils::append_char(buff, buff_n, ' ');
+                Utils::append_char(buff, buff_n, ' ');
+                Utils::append_char(buff, buff_n, ' ');
                 ascii[ascii_n++] = ' ';
             }
         }
@@ -290,7 +294,7 @@ void FuncPrinter::hexdump(int& buff_n, char *buff, uint64_t address, size_t coun
         Utils::auto_snprintf(buff_n, buff, "%s", ascii);
 
         if (current_line < total_lines) {
-            buff[buff_n++] = '\n';
+            Utils::append_char(buff, buff_n, '\n');
         }
 
         offset += 16;
@@ -403,14 +407,14 @@ void FuncPrinter::before(FUNC_CONTEXT *func_context) {
              hexdump(func_context->info_n, func_context->info, func_context->cpu_context.x[reg_pair[0]], reg_pair[1] == 32 ? 0 : func_context->cpu_context.x[reg_pair[1]]);
          }
          
-         func_context->info[func_context->info_n++] = '\n';
+         Utils::append_char(func_context->info, func_context->info_n, '\n');
          return;
     }
 #endif
 
     if (it == func_configs.end()) {
         params_join(func_context, 0);
-        func_context->info[func_context->info_n++] = '\n';
+        Utils::append_char(func_context->info, func_context->info_n, '\n');
         return;
     }
 
@@ -434,7 +438,7 @@ void FuncPrinter::before(FUNC_CONTEXT *func_context) {
     //     return;
     // }
 
-    func_context->info[func_context->info_n++] = '\n';
+    Utils::append_char(func_context->info, func_context->info_n, '\n');
 }
 
 #if PLATFORM_ANDROID
@@ -453,7 +457,7 @@ void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_
     if (env == nullptr) {
         Utils::auto_snprintf(func_context->info_n, func_context->info, "call jni func: %s\nret: 0x", func_context->name);
         Utils::append_uint64_hex(func_context->info, func_context->info_n, curr_cpu_context->x[0]);
-        func_context->info[func_context->info_n++] = '\n';
+        Utils::append_char(func_context->info, func_context->info_n, '\n');
         return;
     }
 
@@ -549,7 +553,7 @@ void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_
 
     Utils::append_string(func_context->info, func_context->info_n, "\nret: 0x");
     Utils::append_uint64_hex(func_context->info, func_context->info_n, curr_cpu_context->x[0]);
-    func_context->info[func_context->info_n++] = '\n';
+    Utils::append_char(func_context->info, func_context->info_n, '\n');
 }
 
 #endif
@@ -557,7 +561,7 @@ void FuncPrinter::jni_after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_
 void FuncPrinter::after(FUNC_CONTEXT *func_context, GumCpuContext *curr_cpu_context) {
     Utils::append_string(func_context->info, func_context->info_n, "ret: 0x");
     Utils::append_uint64_hex(func_context->info, func_context->info_n, curr_cpu_context->x[0]);
-    func_context->info[func_context->info_n++] = '\n';
+    Utils::append_char(func_context->info, func_context->info_n, '\n');
 }
 
 #if PLATFORM_IOS
