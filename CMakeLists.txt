@@ -27,7 +27,7 @@ if(ANDROID)
     target_include_directories(GumTrace SYSTEM PUBLIC .
             ${ANDROID_SYSROOT_INCLUDE})
 
-    target_link_libraries(GumTrace PRIVATE ${CMAKE_SOURCE_DIR}/libs/FridaGum-Android-17.8.3-fix.a)
+    target_link_libraries(GumTrace PRIVATE ${CMAKE_SOURCE_DIR}/libs/FridaGum-Android-17.15.2.a)
     target_link_libraries(GumTrace PRIVATE log dl m z)
 
 else()
@@ -86,7 +86,7 @@ else()
     )
 
     target_link_libraries(GumTrace
-            ${CMAKE_SOURCE_DIR}/libs/FridaGum-IOS-17.8.3-fix.a
+            ${CMAKE_SOURCE_DIR}/libs/FridaGum-IOS-17.15.2.a
             "-framework Foundation"
             "-framework CoreFoundation"
     )

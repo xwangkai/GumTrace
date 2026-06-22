@@ -161,7 +161,6 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
-        gum_stalker_set_ratio(instance->_stalker, 2);
 
         auto module_names_vector = Utils::str_split(module_names, ',');
         for (const auto &module_name: module_names_vector) {
@@ -207,10 +206,8 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
 
     instance->_stalker = gum_stalker_new();
     gum_stalker_set_trust_threshold(instance->_stalker, 0);
-    gum_stalker_set_ratio(instance->_stalker, 2);
     if (instance->options.mode == GUM_OPTIONS_MODE_STABLE) {
         gum_stalker_set_trust_threshold(instance->_stalker, 2);
-        gum_stalker_set_ratio(instance->_stalker, 5);
     }
 
     auto module_names_vector = Utils::str_split(module_names, ',');

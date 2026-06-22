@@ -196,8 +196,8 @@ GumTrace/
 ├── build_ios.sh                # iOS 构建脚本
 ├── example.js                  # Frida 使用示例脚本
 ├── libs/                       # Frida Gum 静态库和头文件
-│   ├── FridaGum-Android-17.8.3.h
-│   └── FridaGum-IOS-17.8.3.h
+│   ├── FridaGum-Android-17.15.2.h
+│   └── FridaGum-IOS-17.15.2.h
 └── src/
     ├── main.cpp                # 入口，导出 init/run/unrun 接口
     ├── GumTrace.h/cpp          # 核心追踪引擎（Stalker 回调、指令解析、日志写入）

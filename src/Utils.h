@@ -24,13 +24,13 @@
 
 #if PLATFORM_IOS
 
-#include "../libs/FridaGum-IOS-17.8.3.h"
+#include "../libs/FridaGum-IOS-17.15.2.h"
 #include <Foundation/Foundation.h>
 #define LOGE(fmt, ...) NSLog(@"[ERROR] %s: " @fmt, LOG_TAG, ##__VA_ARGS__)
 
 #else
 
-#include "../libs/FridaGum-Android-17.8.3.h"
+#include "../libs/FridaGum-Android-17.15.2.h"
 #include <jni.h>
 #include <android/log.h>
 #define LOGE(fmt, ...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, fmt, ##__VA_ARGS__)
