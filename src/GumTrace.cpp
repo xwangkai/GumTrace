@@ -345,7 +345,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
                 FuncPrinter::before(&self->last_func_context);
             }
-#            if PLATFORM_ANDROID
+#if PLATFORM_ANDROID
             else if (self->get_run_time_env() != nullptr && self->jni_func_maps.count(jump_addr) > 0) {
                 self->last_func_context.info_n = 0;
                 self->last_func_context.address = jump_addr;
