@@ -17,7 +17,8 @@ struct REG_LIST {
 typedef enum {
     GUM_OPTIONS_MODE_Stand = 0,
     GUM_OPTIONS_MODE_DEBUG,
-    GUM_OPTIONS_MODE_STABLE
+    GUM_OPTIONS_MODE_STABLE,
+    GUM_OPTIONS_MODE_BLOCK
 } GUM_OPTIONS_MODE;
 
 struct GUM_OPTIONS {
@@ -60,6 +61,12 @@ struct TRACE_PAUSE_CALL_STATE {
     uintptr_t return_sp = 0;
 };
 
+struct TRACE_BLOCK_RANGE_CONFIG {
+    bool enabled = false;
+    uintptr_t start_offset = 0;
+    uintptr_t end_offset = 0;
+};
+
 struct TRACE_BREADCRUMB {
     uintptr_t pc = 0;
     uintptr_t module_base = 0;
@@ -77,6 +84,7 @@ public:
     std::mutex callback_state_mutex;
     std::atomic<bool> flush_thread_running{false};
     std::atomic<uint64_t> probe_sequence{0};
+    std::atomic<uint64_t> block_sequence{0};
     pthread_t flush_thread{};
     int trace_thread_id;
     int trace_flush = 0;
@@ -110,6 +118,7 @@ public:
     TRACE_PAUSE_CALL_CONFIG pause_call_config;
     TRACE_PAUSE_CALL_STATE pause_call_state;
     TRACE_SINGLE_CALLOUT_CONFIG single_callout_config;
+    TRACE_BLOCK_RANGE_CONFIG block_trace_config;
 
     std::unordered_map<size_t, std::string> svc_func_maps;
     std::unordered_map<size_t, std::string> func_fds;
@@ -124,6 +133,7 @@ public:
     void resume_trace_after_call();
     void configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t callee_offset);
     void configure_single_callout(uintptr_t instruction_offset);
+    void configure_block_trace_range(uintptr_t function_offset, uintptr_t function_size);
 
 #if PLATFORM_ANDROID
     JNIEnv *get_run_time_env();

@@ -17,7 +17,6 @@ constexpr bool kMinimalNoopCalloutMode = false;
 constexpr bool kMinimalEventSinkExecMode = false;
 constexpr bool kMinimalInstructionTraceMode = false;
 constexpr bool kSelectiveCalloutMode = false;
-constexpr bool kFullCalloutProbeMode = true;
 
 static uint64_t get_current_tid_safe() {
     return static_cast<uint64_t>(syscall(SYS_gettid));
@@ -31,6 +30,14 @@ struct TraceFpSnapshot {
 };
 
 static thread_local TraceFpSnapshot g_trace_fp_snapshot;
+
+static bool is_block_trace_mode(const GumTrace *self) {
+    return self != nullptr && self->options.mode == GUM_OPTIONS_MODE_BLOCK;
+}
+
+static bool is_full_callout_probe_mode(const GumTrace *self) {
+    return !is_block_trace_mode(self);
+}
 
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
@@ -160,6 +167,12 @@ void GumTrace::configure_pause_trace_call(uintptr_t callsite_offset, uintptr_t c
 void GumTrace::configure_single_callout(uintptr_t instruction_offset) {
     single_callout_config.enabled = instruction_offset != 0;
     single_callout_config.instruction_offset = instruction_offset;
+}
+
+void GumTrace::configure_block_trace_range(uintptr_t function_offset, uintptr_t function_size) {
+    block_trace_config.enabled = function_offset != 0 && function_size != 0;
+    block_trace_config.start_offset = function_offset;
+    block_trace_config.end_offset = function_offset + function_size;
 }
 
 bool GumTrace::should_pause_trace_for_call(const GumCpuContext *cpu_context,
@@ -304,7 +317,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         }
     }
 
-    if (kFullCalloutProbeMode) {
+    if (is_full_callout_probe_mode(self)) {
         const uintptr_t current_fp = static_cast<uintptr_t>(cpu_context->fp);
         const bool fp_just_became_zero = g_trace_fp_snapshot.initialized &&
             g_trace_fp_snapshot.last_fp != 0 &&
@@ -342,7 +355,7 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
         g_trace_fp_snapshot.last_fp = current_fp;
     }
 
-    if (kMinimalNoopCalloutMode || kSelectiveCalloutMode || kFullCalloutProbeMode) {
+    if (kMinimalNoopCalloutMode || kSelectiveCalloutMode || is_full_callout_probe_mode(self)) {
         return;
     }
 
