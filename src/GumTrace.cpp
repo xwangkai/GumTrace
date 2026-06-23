@@ -963,10 +963,12 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
 
     if (self->pause_call_state.active) {
         const uintptr_t return_address = self->pause_call_state.return_address;
-        const bool contains_return = start <= return_address && return_address < end;
+        const bool resumes_here =
+            start == return_address ||
+            (start < return_address && return_address < end);
         const bool sp_matches = cpu_context == nullptr || cpu_context->sp == self->pause_call_state.return_sp;
 
-        if (!contains_return || !sp_matches) {
+        if (!resumes_here || !sp_matches) {
             return;
         }
 
