@@ -4,7 +4,6 @@ let targetSo = 'libtarget.so'
 let gumtrace_init = null
 let gumtrace_run = null
 let gumtrace_unrun = null
-let gumtrace_set_pause_trace_call = null
 
 function loadGumTrace() {
     let dlopen = new NativeFunction(Module.findGlobalExportByName('dlopen'), 'pointer', ['pointer', 'int'])
@@ -16,7 +15,6 @@ function loadGumTrace() {
     gumtrace_init = new NativeFunction(dlsym(soHandle, Memory.allocUtf8String('init')), 'void', ['pointer', 'pointer', 'int', 'pointer'])
     gumtrace_run = new NativeFunction(dlsym(soHandle, Memory.allocUtf8String('run')), 'void', [])
     gumtrace_unrun = new NativeFunction(dlsym(soHandle, Memory.allocUtf8String('unrun')), 'void', [])
-    gumtrace_set_pause_trace_call = new NativeFunction(dlsym(soHandle, Memory.allocUtf8String('set_pause_trace_call')), 'void', ['uint64', 'uint64'])
 }
 
 function startTrace() {
@@ -30,13 +28,12 @@ function startTrace() {
     // 0 = Stand 模式
     // 1 = DEBUG 模式
     // 2 = Stable 模式
-    options.writeU64(0)
+    // 3 = BLOCK 模式
+    options.writeU64(3)
 
     console.log('start trace')
 
     gumtrace_init(moduleNames, outputPath, threadId, options)
-    // 命中 .text:0x2A8D34 的 BL sub_15B044 时，跳过 sub_15B044 函数体，返回后继续 trace
-    gumtrace_set_pause_trace_call(0x2A8D34, 0x15B044)
     gumtrace_run()
 }
 
