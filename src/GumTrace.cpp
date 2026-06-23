@@ -734,6 +734,35 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
     // }
 }
 
+void GumTrace::pause_control_callout(GumCpuContext *cpu_context, gpointer user_data) {
+    auto self = get_instance();
+    auto callback_ctx = static_cast<CALLBACK_CTX *>(user_data);
+    if (self == nullptr || callback_ctx == nullptr || cpu_context == nullptr) {
+        return;
+    }
+
+    if (self->is_trace_paused_for_call(cpu_context)) {
+        return;
+    }
+
+    __uint128_t jump_addr = 0;
+    if (callback_ctx->instruction.id == ARM64_INS_BL &&
+        callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_IMM) {
+        jump_addr = callback_ctx->instruction_detail.arm64.operands[0].imm;
+    } else if (callback_ctx->instruction.id == ARM64_INS_BLR &&
+               callback_ctx->instruction_detail.arm64.operands[0].type == ARM64_OP_REG) {
+        Utils::get_register_value(callback_ctx->instruction_detail.arm64.operands[0].reg, cpu_context, jump_addr);
+    } else {
+        return;
+    }
+
+    self->should_pause_trace_for_call(
+        cpu_context,
+        callback_ctx->module_base,
+        callback_ctx->instruction.id,
+        jump_addr);
+}
+
 void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput *output, gpointer user_data) {
     const auto self = get_instance();
     const bool block_trace_mode = is_block_trace_mode(self);
@@ -865,6 +894,17 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
         }
 
         if (block_trace_mode || kMinimalEventSinkExecMode) {
+            if (block_trace_mode && self->pause_call_config.enabled &&
+                (p_insn->id == ARM64_INS_BL || p_insn->id == ARM64_INS_BLR || p_insn->id == ARM64_INS_RET)) {
+                const auto &module = self->get_module_by_name(*module_name_ptr);
+                auto callback_ctx = self->callback_context_instance->pull(
+                    p_insn,
+                    module_name_ptr->c_str(),
+                    module.at("base"));
+                if (callback_ctx != nullptr) {
+                    gum_stalker_iterator_put_callout(it, pause_control_callout, callback_ctx, CallbackContext::release);
+                }
+            }
             gum_stalker_iterator_keep(it);
             continue;
         }
@@ -921,6 +961,10 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
         if (!overlaps) {
             return;
         }
+    }
+
+    if (self->pause_call_state.active) {
+        return;
     }
 
     uint64_t block_seq = self->block_sequence.fetch_add(1, std::memory_order_relaxed) + 1;

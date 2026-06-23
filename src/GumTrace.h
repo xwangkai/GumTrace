@@ -107,6 +107,7 @@ public:
     void unfollow();
 
     static void callout_callback(GumCpuContext *cpu_context, gpointer user_data);
+    static void pause_control_callout(GumCpuContext *cpu_context, gpointer user_data);
     static void event_sink_callback(const GumEvent *event, GumCpuContext *cpu_context, gpointer user_data);
 
     char buffer[BUFFER_SIZE] = {};
