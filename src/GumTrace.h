@@ -74,6 +74,44 @@ struct TRACE_BREADCRUMB {
     char mnemonic[32] = {};
 };
 
+struct TRACE_BLOCK_NODE {
+    uintptr_t module_base = 0;
+    uintptr_t start_offset = 0;
+    uintptr_t end_offset = 0;
+
+    bool operator==(const TRACE_BLOCK_NODE &other) const {
+        return module_base == other.module_base &&
+               start_offset == other.start_offset &&
+               end_offset == other.end_offset;
+    }
+};
+
+struct TRACE_BLOCK_NODE_HASH {
+    size_t operator()(const TRACE_BLOCK_NODE &node) const {
+        size_t h1 = std::hash<uintptr_t>{}(node.module_base);
+        size_t h2 = std::hash<uintptr_t>{}(node.start_offset);
+        size_t h3 = std::hash<uintptr_t>{}(node.end_offset);
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
+
+struct TRACE_BLOCK_EDGE {
+    TRACE_BLOCK_NODE from;
+    TRACE_BLOCK_NODE to;
+
+    bool operator==(const TRACE_BLOCK_EDGE &other) const {
+        return from == other.from && to == other.to;
+    }
+};
+
+struct TRACE_BLOCK_EDGE_HASH {
+    size_t operator()(const TRACE_BLOCK_EDGE &edge) const {
+        size_t h1 = TRACE_BLOCK_NODE_HASH{}(edge.from);
+        size_t h2 = TRACE_BLOCK_NODE_HASH{}(edge.to);
+        return h1 ^ (h2 << 1);
+    }
+};
+
 class GumTrace {
 public:
     static GumTrace *get_instance();
@@ -82,6 +120,7 @@ public:
     std::ofstream trace_file;
     std::mutex trace_file_mutex;
     std::mutex callback_state_mutex;
+    std::mutex block_graph_mutex;
     std::atomic<bool> flush_thread_running{false};
     std::atomic<uint64_t> probe_sequence{0};
     std::atomic<uint64_t> block_sequence{0};
@@ -120,6 +159,9 @@ public:
     TRACE_PAUSE_CALL_STATE pause_call_state;
     TRACE_SINGLE_CALLOUT_CONFIG single_callout_config;
     TRACE_BLOCK_RANGE_CONFIG block_trace_config;
+    std::unordered_set<TRACE_BLOCK_NODE, TRACE_BLOCK_NODE_HASH> seen_block_nodes;
+    std::unordered_set<TRACE_BLOCK_EDGE, TRACE_BLOCK_EDGE_HASH> seen_block_edges;
+    std::unordered_map<uint64_t, TRACE_BLOCK_NODE> last_block_by_tid;
 
     std::unordered_map<size_t, std::string> svc_func_maps;
     std::unordered_map<size_t, std::string> func_fds;

@@ -969,6 +969,30 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
 
     uint64_t block_seq = self->block_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
     uint64_t tid = get_current_tid_safe();
+    TRACE_BLOCK_NODE current_node{};
+    current_node.module_base = module_base;
+    current_node.start_offset = start_offset;
+    current_node.end_offset = end_offset;
+
+    bool is_new_node = false;
+    bool is_new_edge = false;
+    TRACE_BLOCK_EDGE current_edge{};
+
+    {
+        std::lock_guard<std::mutex> graph_lock(self->block_graph_mutex);
+        auto node_result = self->seen_block_nodes.insert(current_node);
+        is_new_node = node_result.second;
+
+        auto last_it = self->last_block_by_tid.find(tid);
+        if (last_it != self->last_block_by_tid.end()) {
+            current_edge.from = last_it->second;
+            current_edge.to = current_node;
+            auto edge_result = self->seen_block_edges.insert(current_edge);
+            is_new_edge = edge_result.second;
+        }
+
+        self->last_block_by_tid[tid] = current_node;
+    }
 
     std::lock_guard<std::mutex> lock(self->trace_file_mutex);
     if (!self->trace_file.is_open()) {
@@ -976,58 +1000,81 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
     }
 
     char line[256];
-    int block_written = snprintf(
-        line,
-        sizeof(line),
-        "[block] seq=%llu tid=%llu [%s] 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
-        (unsigned long long) block_seq,
-        (unsigned long long) tid,
-        module_name_ptr->c_str(),
-        (unsigned long long) start,
-        (unsigned long long) start_offset,
-        (unsigned long long) end,
-        (unsigned long long) end_offset);
-    if (block_written > 0) {
-        size_t safe_written = static_cast<size_t>(block_written);
-        if (safe_written >= sizeof(line)) {
-            safe_written = sizeof(line) - 1;
-        }
-        self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
-    }
-
-    for (uintptr_t insn = start; insn + 4 <= end; insn += 4) {
-        uint32_t raw = *reinterpret_cast<const uint32_t *>(insn);
-        int insn_written = snprintf(
+    if (is_new_edge) {
+        int edge_written = snprintf(
             line,
             sizeof(line),
-            "  0x%llx!0x%llx raw=0x%08x\n",
-            (unsigned long long) insn,
-            (unsigned long long) (insn - module_base),
-            raw);
-        if (insn_written <= 0) {
-            continue;
-        }
-
-        size_t safe_insn_written = static_cast<size_t>(insn_written);
-        if (safe_insn_written >= sizeof(line)) {
-            safe_insn_written = sizeof(line) - 1;
-        }
-        self->trace_file.write(line, static_cast<std::streamsize>(safe_insn_written));
-    }
-
-    if (end > start && ((end - start) % 4) != 0) {
-        int tail_written = snprintf(
-            line,
-            sizeof(line),
-            "  [warn] non-4-byte tail at 0x%llx size=0x%llx\n",
-            (unsigned long long) end,
-            (unsigned long long) (end - start));
-        if (tail_written > 0) {
-            size_t safe_tail_written = static_cast<size_t>(tail_written);
-            if (safe_tail_written >= sizeof(line)) {
-                safe_tail_written = sizeof(line) - 1;
+            "[edge] seq=%llu tid=%llu [%s] 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
+            (unsigned long long) block_seq,
+            (unsigned long long) tid,
+            module_name_ptr->c_str(),
+            (unsigned long long) (current_edge.from.module_base + current_edge.from.start_offset),
+            (unsigned long long) current_edge.from.start_offset,
+            (unsigned long long) start,
+            (unsigned long long) start_offset);
+        if (edge_written > 0) {
+            size_t safe_written = static_cast<size_t>(edge_written);
+            if (safe_written >= sizeof(line)) {
+                safe_written = sizeof(line) - 1;
             }
-            self->trace_file.write(line, static_cast<std::streamsize>(safe_tail_written));
+            self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+        }
+    }
+
+    if (is_new_node) {
+        int block_written = snprintf(
+            line,
+            sizeof(line),
+            "[block] seq=%llu tid=%llu [%s] 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
+            (unsigned long long) block_seq,
+            (unsigned long long) tid,
+            module_name_ptr->c_str(),
+            (unsigned long long) start,
+            (unsigned long long) start_offset,
+            (unsigned long long) end,
+            (unsigned long long) end_offset);
+        if (block_written > 0) {
+            size_t safe_written = static_cast<size_t>(block_written);
+            if (safe_written >= sizeof(line)) {
+                safe_written = sizeof(line) - 1;
+            }
+            self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+        }
+
+        for (uintptr_t insn = start; insn + 4 <= end; insn += 4) {
+            uint32_t raw = *reinterpret_cast<const uint32_t *>(insn);
+            int insn_written = snprintf(
+                line,
+                sizeof(line),
+                "  0x%llx!0x%llx raw=0x%08x\n",
+                (unsigned long long) insn,
+                (unsigned long long) (insn - module_base),
+                raw);
+            if (insn_written <= 0) {
+                continue;
+            }
+
+            size_t safe_insn_written = static_cast<size_t>(insn_written);
+            if (safe_insn_written >= sizeof(line)) {
+                safe_insn_written = sizeof(line) - 1;
+            }
+            self->trace_file.write(line, static_cast<std::streamsize>(safe_insn_written));
+        }
+
+        if (end > start && ((end - start) % 4) != 0) {
+            int tail_written = snprintf(
+                line,
+                sizeof(line),
+                "  [warn] non-4-byte tail at 0x%llx size=0x%llx\n",
+                (unsigned long long) end,
+                (unsigned long long) (end - start));
+            if (tail_written > 0) {
+                size_t safe_tail_written = static_cast<size_t>(tail_written);
+                if (safe_tail_written >= sizeof(line)) {
+                    safe_tail_written = sizeof(line) - 1;
+                }
+                self->trace_file.write(line, static_cast<std::streamsize>(safe_tail_written));
+            }
         }
     }
 
