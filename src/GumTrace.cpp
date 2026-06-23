@@ -935,8 +935,6 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
 }
 
 void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_context, gpointer user_data) {
-    (void) cpu_context;
-
     auto self = static_cast<GumTrace *>(user_data);
     if (self == nullptr || event == nullptr || event->type != GUM_BLOCK) {
         return;
@@ -964,7 +962,15 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
     }
 
     if (self->pause_call_state.active) {
-        return;
+        const uintptr_t return_address = self->pause_call_state.return_address;
+        const bool contains_return = start <= return_address && return_address < end;
+        const bool sp_matches = cpu_context == nullptr || cpu_context->sp == self->pause_call_state.return_sp;
+
+        if (!contains_return || !sp_matches) {
+            return;
+        }
+
+        self->resume_trace_after_call();
     }
 
     uint64_t block_seq = self->block_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
