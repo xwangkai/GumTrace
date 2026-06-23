@@ -23,6 +23,15 @@ static uint64_t get_current_tid_safe() {
     return static_cast<uint64_t>(syscall(SYS_gettid));
 }
 
+struct TraceFpSnapshot {
+    bool initialized = false;
+    uint64_t last_sequence = 0;
+    uintptr_t last_pc = 0;
+    uintptr_t last_fp = 0;
+};
+
+static thread_local TraceFpSnapshot g_trace_fp_snapshot;
+
 const char *get_reg_name_safe(arm64_reg reg) {
     static const char *kWRegs[] = {
         "w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7",
@@ -269,18 +278,21 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
     {
         std::lock_guard<std::mutex> lock(self->trace_file_mutex);
         if (self->trace_file.is_open()) {
-            char line[256];
+            char line[512];
             int written = snprintf(
                 line,
                 sizeof(line),
-                "[callout-enter] seq=%llu tid=%llu [%s] 0x%llx!0x%llx %s %s\n",
+                "[callout-enter] seq=%llu tid=%llu [%s] 0x%llx!0x%llx %s %s sp=0x%llx fp=0x%llx lr=0x%llx\n",
                 (unsigned long long) callback_ctx->sequence,
                 (unsigned long long) get_current_tid_safe(),
                 callback_ctx->module_name != nullptr ? callback_ctx->module_name : "",
                 (unsigned long long) cpu_context->pc,
                 (unsigned long long) (cpu_context->pc - callback_ctx->module_base),
                 callback_ctx->instruction.mnemonic,
-                callback_ctx->instruction.op_str);
+                callback_ctx->instruction.op_str,
+                (unsigned long long) cpu_context->sp,
+                (unsigned long long) cpu_context->fp,
+                (unsigned long long) cpu_context->lr);
             if (written > 0) {
                 size_t safe_written = static_cast<size_t>(written);
                 if (safe_written >= sizeof(line)) {
@@ -290,6 +302,44 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
                 self->trace_file.flush();
             }
         }
+    }
+
+    if (kFullCalloutProbeMode) {
+        const uintptr_t current_fp = static_cast<uintptr_t>(cpu_context->fp);
+        const bool fp_just_became_zero = g_trace_fp_snapshot.initialized &&
+            g_trace_fp_snapshot.last_fp != 0 &&
+            current_fp == 0;
+
+        if (fp_just_became_zero) {
+            std::lock_guard<std::mutex> lock(self->trace_file_mutex);
+            if (self->trace_file.is_open()) {
+                char line[512];
+                int written = snprintf(
+                    line,
+                    sizeof(line),
+                    "[fp-zero-transition] tid=%llu prev_seq=%llu prev_pc=0x%llx cur_seq=%llu cur_pc=0x%llx lr=0x%llx sp=0x%llx\n",
+                    (unsigned long long) get_current_tid_safe(),
+                    (unsigned long long) g_trace_fp_snapshot.last_sequence,
+                    (unsigned long long) g_trace_fp_snapshot.last_pc,
+                    (unsigned long long) callback_ctx->sequence,
+                    (unsigned long long) cpu_context->pc,
+                    (unsigned long long) cpu_context->lr,
+                    (unsigned long long) cpu_context->sp);
+                if (written > 0) {
+                    size_t safe_written = static_cast<size_t>(written);
+                    if (safe_written >= sizeof(line)) {
+                        safe_written = sizeof(line) - 1;
+                    }
+                    self->trace_file.write(line, static_cast<std::streamsize>(safe_written));
+                    self->trace_file.flush();
+                }
+            }
+        }
+
+        g_trace_fp_snapshot.initialized = true;
+        g_trace_fp_snapshot.last_sequence = callback_ctx->sequence;
+        g_trace_fp_snapshot.last_pc = static_cast<uintptr_t>(cpu_context->pc);
+        g_trace_fp_snapshot.last_fp = current_fp;
     }
 
     if (kMinimalNoopCalloutMode || kSelectiveCalloutMode || kFullCalloutProbeMode) {
