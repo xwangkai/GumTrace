@@ -199,7 +199,7 @@ bool GumTrace::should_pause_trace_for_call(const GumCpuContext *cpu_context,
     }
 
     pause_call_state.active = true;
-    pause_call_state.return_address = cpu_context->lr;
+    pause_call_state.return_address = cpu_context->pc + 4;
     pause_call_state.return_sp = cpu_context->sp;
     return true;
 }
