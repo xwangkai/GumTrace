@@ -736,6 +736,8 @@ void GumTrace::callout_callback(GumCpuContext *cpu_context, gpointer user_data) 
 
 void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput *output, gpointer user_data) {
     const auto self = get_instance();
+    const bool block_trace_mode = is_block_trace_mode(self);
+    const bool full_callout_probe_mode = is_full_callout_probe_mode(self);
 
     cs_insn *p_insn;
     auto *it = iterator;
@@ -819,7 +821,7 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
-        if (kFullCalloutProbeMode) {
+        if (full_callout_probe_mode) {
             const auto &module = self->get_module_by_name(*module_name_ptr);
             uintptr_t module_base = module.at("base");
             uintptr_t insn_offset = static_cast<uintptr_t>(p_insn->address) - module_base;
@@ -862,7 +864,7 @@ void GumTrace::transform_callback(GumStalkerIterator *iterator, GumStalkerOutput
             continue;
         }
 
-        if (kMinimalEventSinkExecMode) {
+        if (block_trace_mode || kMinimalEventSinkExecMode) {
             gum_stalker_iterator_keep(it);
             continue;
         }
@@ -909,6 +911,20 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
 
     const auto &module = self->get_module_by_name(*module_name_ptr);
     uintptr_t module_base = module.at("base");
+    uintptr_t start_offset = start - module_base;
+    uintptr_t end_offset = end - module_base;
+
+    if (self->block_trace_config.enabled) {
+        const uintptr_t trace_start = self->block_trace_config.start_offset;
+        const uintptr_t trace_end = self->block_trace_config.end_offset;
+        const bool overlaps = end_offset > trace_start && start_offset < trace_end;
+        if (!overlaps) {
+            return;
+        }
+    }
+
+    uint64_t block_seq = self->block_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    uint64_t tid = get_current_tid_safe();
 
     std::lock_guard<std::mutex> lock(self->trace_file_mutex);
     if (!self->trace_file.is_open()) {
@@ -919,12 +935,14 @@ void GumTrace::event_sink_callback(const GumEvent *event, GumCpuContext *cpu_con
     int block_written = snprintf(
         line,
         sizeof(line),
-        "[%s] block 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
+        "[block] seq=%llu tid=%llu [%s] 0x%llx!0x%llx -> 0x%llx!0x%llx\n",
+        (unsigned long long) block_seq,
+        (unsigned long long) tid,
         module_name_ptr->c_str(),
         (unsigned long long) start,
-        (unsigned long long) (start - module_base),
+        (unsigned long long) start_offset,
         (unsigned long long) end,
-        (unsigned long long) (end - module_base));
+        (unsigned long long) end_offset);
     if (block_written > 0) {
         size_t safe_written = static_cast<size_t>(block_written);
         if (safe_written >= sizeof(line)) {

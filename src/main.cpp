@@ -152,13 +152,14 @@ void init(const char *module_names, char *trace_file_path, int thread_id, GUM_OP
     GumTrace *instance = GumTrace::get_instance();
     memcpy(&instance->options, options, sizeof(GUM_OPTIONS));
     instance->configure_pause_trace_call(0, 0);
+    instance->configure_block_trace_range(0, 0);
     instance->trace_thread_id = thread_id;
 
     const bool kMinimalStalkerOnlyMode = false;
     const bool kMinimalNoopCalloutMode = false;
-    const bool kMinimalEventSinkExecMode = false;
+    const bool kMinimalEventSinkExecMode = instance->options.mode == GUM_OPTIONS_MODE_BLOCK;
     const bool kMinimalInstructionTraceMode = false;
-    const bool kFullCalloutProbeMode = true;
+    const bool kFullCalloutProbeMode = !kMinimalEventSinkExecMode;
     if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode || kFullCalloutProbeMode) {
         instance->_stalker = gum_stalker_new();
         gum_stalker_set_trust_threshold(instance->_stalker, 0);
@@ -335,9 +336,9 @@ void run() {
     GumTrace *instance = GumTrace::get_instance();
     const bool kMinimalStalkerOnlyMode = false;
     const bool kMinimalNoopCalloutMode = false;
-    const bool kMinimalEventSinkExecMode = false;
+    const bool kMinimalEventSinkExecMode = instance->options.mode == GUM_OPTIONS_MODE_BLOCK;
     const bool kMinimalInstructionTraceMode = false;
-    const bool kFullCalloutProbeMode = true;
+    const bool kFullCalloutProbeMode = !kMinimalEventSinkExecMode;
     if (kMinimalStalkerOnlyMode || kMinimalNoopCalloutMode || kMinimalEventSinkExecMode || kMinimalInstructionTraceMode || kFullCalloutProbeMode) {
         instance->trace_thread_id > 0
             ? gum_stalker_follow(instance->_stalker, instance->trace_thread_id, instance->_transformer, instance->_event_sink)
@@ -360,6 +361,12 @@ extern "C" __attribute__((visibility("default")))
 void set_single_callout(uint64_t instruction_offset) {
     GumTrace *instance = GumTrace::get_instance();
     instance->configure_single_callout(instruction_offset);
+}
+
+extern "C" __attribute__((visibility("default")))
+void set_block_trace_range(uint64_t function_offset, uint64_t function_size) {
+    GumTrace *instance = GumTrace::get_instance();
+    instance->configure_block_trace_range(function_offset, function_size);
 }
 
 extern "C" __attribute__((visibility("default")))
